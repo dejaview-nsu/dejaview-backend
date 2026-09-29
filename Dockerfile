@@ -21,4 +21,5 @@ RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FI
 FROM ubuntu:24.04 AS runtime
 COPY --from=build /src/build/dejaview-backend /usr/local/bin/dejaview-backend
 USER ubuntu
+EXPOSE 8081
 CMD ["dejaview-backend"]
