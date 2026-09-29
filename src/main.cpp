@@ -1,5 +1,8 @@
+#include <drogon/drogon.h>
+
 #include <print>
 
-int main() {
-    std::println("dejaview-backend: сборка работает");
+int main()
+{
+    std::println("dejaview-backend: Drogon {}", drogon::getVersion());
 }

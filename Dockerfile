@@ -1,11 +1,20 @@
-# компилятор, все библиотеки, скомпилированный код и тесты
-FROM ubuntu:24.04 AS build
+# инструменты: компилятор, CMake, Ninja, Conan
+FROM ubuntu:24.04 AS toolchain
 RUN apt-get update \
- && apt-get install -y --no-install-recommends g++-14 cmake ninja-build \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends g++-14 cmake ninja-build make perl pipx ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -s gcc-14 /usr/bin/gcc && ln -s g++-14 /usr/bin/g++
+ENV PIPX_BIN_DIR=/usr/local/bin
+RUN pipx install conan==2.33.0 && conan profile detect
 WORKDIR /src
+
+# все библиотеки, скомпилированный код и тесты
+FROM toolchain AS build
+# зависимости отдельным слоем: пересобираются только при изменении conanfile.txt или conan.lock
+COPY conanfile.txt conan.lock ./
+RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23
 COPY . .
-RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-14 \
+RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
  && cmake --build build --parallel
 
 # итоговый образ
