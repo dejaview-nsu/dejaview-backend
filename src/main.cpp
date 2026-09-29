@@ -7,29 +7,32 @@
 
 using namespace drogon;
 
-int main()
-{
-    Config config;
-    try
-    {
-        config = loadConfig();
-    }
-    catch (const std::exception& e)
-    {
-        LOG_ERROR << "Ошибка конфигурации: " << e.what();
-        return 1;
-    }
+using Callback = std::function<void(const HttpResponsePtr &)>;
 
-    app().registerHandler(
-        "/health",
-        [](const HttpRequestPtr&, std::function<void(const HttpResponsePtr&)>&& callback)
-        {
-            Json::Value body;
-            body["status"] = "ok";
-            callback(HttpResponse::newHttpJsonResponse(body));
-        },
-        {Get});
+void healthHandler(const HttpRequestPtr &request, Callback &&callback) {
+  Json::Value jsonBody;
+  jsonBody["status"] = "ok";
+  auto response = HttpResponse::newHttpJsonResponse(jsonBody);
 
-    LOG_INFO << "dejaview-backend слушает порт " << config.port;
-    app().setUploadPath("/tmp/dejaview-uploads").addListener("0.0.0.0", config.port).run();
+  callback(response);
+}
+
+int main() {
+  Config config;
+  try {
+    config = loadConfig();
+  } catch (const std::exception &e) {
+    LOG_ERROR << "Ошибка конфигурации: " << e.what();
+    return 1;
+  }
+
+  LOG_INFO << "dejaview-backend слушает порт " << config.port;
+
+  app()
+      .addListener("0.0.0.0", config.port)
+      .setThreadNum(0)
+      .enableServerHeader(false)
+      .setUploadPath("/tmp/dejaview-uploads")
+      .registerHandler("/health", &healthHandler, {Get})
+      .run();
 }

@@ -8,11 +8,19 @@ ENV PIPX_BIN_DIR=/usr/local/bin
 RUN pipx install conan==2.33.0 && conan profile detect
 WORKDIR /src
 
-# все библиотеки, скомпилированный код и тесты
-FROM toolchain AS build
-# зависимости отдельным слоем: пересобираются только при изменении conanfile.txt или conan.lock
+# все библиотеки: пересобираются только при изменении conanfile.txt или conan.lock
+FROM toolchain AS deps
 COPY conanfile.txt conan.lock ./
 RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23
+
+# среда разработки для VS Code Dev Containers: всё то же + clangd и git
+FROM deps AS dev
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends clangd git openssh-client \
+ && rm -rf /var/lib/apt/lists/*
+
+# скомпилированный код и тесты
+FROM deps AS build
 COPY . .
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
  && cmake --build build --parallel
