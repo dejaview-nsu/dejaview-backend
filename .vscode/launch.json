@@ -8,6 +8,8 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/dejaview-backend",
             "cwd": "${workspaceFolder}",
+            // переменные окружения из .env (создать: cp .env.example .env)
+            "envFile": "${workspaceFolder}/.env",
             "MIMode": "gdb",
             "preLaunchTask": "build",
             "setupCommands": [

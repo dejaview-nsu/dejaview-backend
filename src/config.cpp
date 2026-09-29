@@ -22,5 +22,13 @@ Config loadConfig()
         }
     }
 
+    const char *rawUrl = std::getenv("DATABASE_URL");
+    const std::string_view url = rawUrl ? rawUrl : "";
+    if (!url.starts_with("postgres://") && !url.starts_with("postgresql://"))
+    {
+        throw std::runtime_error("DATABASE_URL: не задан или не начинается с postgres://");
+    }
+    config.databaseUrl = url;
+
     return config;
 }

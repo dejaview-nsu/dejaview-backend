@@ -3,19 +3,31 @@
 #include <drogon/drogon.h>
 
 #include <exception>
-#include <functional>
 
 using namespace drogon;
 
-using Callback = std::function<void(const HttpResponsePtr &)>;
-
-void healthHandler(const HttpRequestPtr &request, Callback &&callback)
+// 200, если БД отвечает, иначе 503 - как GET /health у ML-сервиса.
+// db принимаем по значению: корутина может продолжиться после co_await, когда ссылка уже
+// недействительна.
+Task<HttpResponsePtr> healthHandler(orm::DbClientPtr db)
 {
-    Json::Value jsonBody;
-    jsonBody["status"] = "ok";
-    auto response = HttpResponse::newHttpJsonResponse(jsonBody);
+    bool dbOk = true;
+    try
+    {
+        co_await db->execSqlCoro("SELECT 1");
+    }
+    catch (const orm::DrogonDbException &e)
+    {
+        LOG_WARN << "health: БД недоступна: " << e.base().what();
+        dbOk = false;
+    }
 
-    callback(response);
+    Json::Value body;
+    body["status"] = dbOk ? "ok" : "unavailable";
+    body["database"] = dbOk ? "ok" : "unavailable";
+    auto response = HttpResponse::newHttpJsonResponse(body);
+    response->setStatusCode(dbOk ? k200OK : k503ServiceUnavailable);
+    co_return response;
 }
 
 int main()
@@ -31,6 +43,11 @@ int main()
         return 1;
     }
 
+    // Один клиент с пулом соединений на всё приложение. Если БД недоступна, запросы падают с
+    // ошибкой, а клиент сам переподключается.
+    auto db = orm::DbClient::newPgClient(config.databaseUrl, 4);
+    db->setTimeout(2.0);
+
     LOG_INFO << "dejaview-backend слушает порт " << config.port;
 
     app()
@@ -38,6 +55,6 @@ int main()
         .setThreadNum(0)
         .enableServerHeader(false)
         .setUploadPath("/tmp/dejaview-uploads")
-        .registerHandler("/health", &healthHandler, {Get})
+        .registerHandler("/health", [db](HttpRequestPtr) { return healthHandler(db); }, {Get})
         .run();
 }
