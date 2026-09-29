@@ -13,10 +13,10 @@ FROM toolchain AS deps
 COPY conanfile.txt conan.lock ./
 RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23
 
-# среда разработки для VS Code Dev Containers: всё то же + clangd и git
+# среда разработки для VS Code Dev Containers: всё то же + clangd, clang-format, gdb и git
 FROM deps AS dev
 RUN apt-get update \
- && apt-get install -y --no-install-recommends clangd git openssh-client \
+ && apt-get install -y --no-install-recommends clangd clang-format gdb git openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
 # скомпилированный код и тесты

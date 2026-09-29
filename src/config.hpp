@@ -2,7 +2,8 @@
 
 #include <cstdint>
 
-struct Config {
+struct Config
+{
     std::uint16_t port;
 };
 
