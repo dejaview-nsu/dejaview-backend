@@ -8,6 +8,14 @@
             "command": "cmake --build build",
             "problemMatcher": "$gcc",
             "group": {"kind": "build", "isDefault": true}
+        },
+        {
+            // Cmd+Shift+P → Tasks: Run Test Task
+            "label": "test",
+            "type": "shell",
+            "command": "cmake --build build --target check",
+            "problemMatcher": "$gcc",
+            "group": {"kind": "test", "isDefault": true}
         }
     ]
 }

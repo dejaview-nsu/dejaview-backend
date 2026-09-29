@@ -23,7 +23,8 @@ RUN apt-get update \
 FROM deps AS build
 COPY . .
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
- && cmake --build build --parallel
+ && cmake --build build --parallel \
+ && ctest --test-dir build --output-on-failure
 
 # итоговый образ
 FROM ubuntu:24.04 AS runtime
