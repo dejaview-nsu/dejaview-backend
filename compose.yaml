@@ -1,0 +1,8 @@
+# Собрать и запустить backend одной командой: docker compose up --build
+# PostgreSQL с миграциями - из dejaview-infra, см. README.
+services:
+  backend:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8081:8081"
