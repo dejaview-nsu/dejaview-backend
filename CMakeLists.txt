@@ -24,3 +24,23 @@ target_link_libraries(dejaview-tests PRIVATE dejaview-core GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(dejaview-tests)
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure DEPENDS dejaview-tests)
+
+# Покрытие тестами (#17098 п. 1). В Debug код приложения собирается с --coverage и при работе
+# записывает, какие строки выполнились. Отчёт: cmake --build build --target coverage,
+# подробный по строкам - build/coverage/index.html
+target_compile_options(dejaview-core PRIVATE $<$<CONFIG:Debug>:--coverage>)
+target_link_options(dejaview-core PUBLIC $<$<CONFIG:Debug>:--coverage>)
+# Порог 70% - #17098 п. 1.1: ниже - команда завершается ошибкой.
+# ponytail: порог общий на весь src/; когда появятся auth, search, users - отдельный прогон
+# gcovr с --filter по их файлам и порогом 80 (#17098 п. 1.2)
+add_custom_target(coverage
+    # счётчики копятся между запусками (и от ручного запуска сервера) - обнуляем
+    COMMAND find . -name "*.gcda" -delete
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMAND ${CMAKE_COMMAND} -E make_directory coverage
+    COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/
+            --gcov-executable gcov-14 --txt --html-details coverage/index.html
+            --fail-under-line 70 .
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS dejaview-tests
+    VERBATIM)

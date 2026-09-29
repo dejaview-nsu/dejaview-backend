@@ -13,11 +13,12 @@ FROM toolchain AS deps
 COPY conanfile.txt conan.lock ./
 RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23
 
-# среда разработки для VS Code Dev Containers: всё то же + clangd, clang-format, gdb и git
+# среда разработки для VS Code Dev Containers: всё то же + clangd, clang-format, gdb, git и gcovr
 FROM deps AS dev
 RUN apt-get update \
  && apt-get install -y --no-install-recommends clangd clang-format gdb git openssh-client \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && pipx install gcovr==8.6
 
 # скомпилированный код и тесты
 FROM deps AS build
