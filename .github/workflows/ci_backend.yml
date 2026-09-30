@@ -1,0 +1,129 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# новый коммит отменяет проверку старого
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}  
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install clang-format
+        run: pipx install clang-format==18.1.3
+
+      - name: Check formatting
+        run: |
+          git ls-files -z '*.cpp' '*.cc' '*.h' '*.hpp' \
+            | xargs -0 -r clang-format --dry-run --Werror
+
+  openapi:
+    name: OpenAPI lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Lint specs
+        run: |
+          specs=$(git ls-files '*openapi*.yaml')
+          if [ -z "$specs" ]; then
+            echo "::notice::OpenAPI-файлов в репозитории нет, проверять нечего"
+            exit 0
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:/spec" \
+            redocly/cli:2.54.3 \
+            lint --format=github-actions $specs
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.11
+        env:
+          POSTGRES_DB: dejaview_test
+          POSTGRES_USER: dejaview
+          POSTGRES_PASSWORD: dejaview
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dejaview -d dejaview_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Up, rollback, up 
+        run: |
+          # dbmate в контейнере (тот же образ, что в README): видит db/ и Postgres на localhost:5432
+          dbmate() {
+            docker run --rm --network host \
+              -v "${{ github.workspace }}/db:/db" \
+              -e DATABASE_URL="postgres://dejaview:dejaview@localhost:5432/dejaview_test?sslmode=disable" \
+              -e DBMATE_NO_DUMP_SCHEMA=true \
+              ghcr.io/amacneil/dbmate:2.36.0 "$@"
+          }
+
+          dbmate up
+
+          count=$(ls db/migrations/*.sql | wc -l)
+          for i in $(seq "$count"); do
+            dbmate rollback
+          done
+
+          dbmate up
+
+
+  image:
+    name: Build, test & image
+    needs: [format, openapi, migrations]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build, test and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [format, openapi, migrations, image]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail if any job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
