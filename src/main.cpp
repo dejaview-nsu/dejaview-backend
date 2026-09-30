@@ -31,6 +31,9 @@ int main()
         .addListener("0.0.0.0", config.port)
         .setThreadNum(0)
         .enableServerHeader(false)
+        // Только API. Иначе Drogon отдаёт файлы из рабочей папки (в контейнере это /), в том числе
+        // загруженные пользователями: корень статики, которого нет, даёт 404 на любой другой путь
+        .setDocumentRoot("/nonexistent")
         .setUploadPath("/tmp/dejaview-uploads")
         .registerHandler("/health", [db](HttpRequestPtr) { return healthHandler(db); }, {Get})
         .run();
