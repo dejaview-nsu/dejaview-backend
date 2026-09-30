@@ -1,0 +1,27 @@
+{
+    "name": "dejaview-backend",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": "..",
+        "target": "dev"
+    },
+    // Наш код в Debug для отладчика, библиотеки в Release (уже собраны в образе).
+    // Conan создаёт preset conan-debug с Ninja: его же подхватывает расширение CMake Tools.
+    "postCreateCommand": "conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23 -s '&:build_type=Debug' -c tools.cmake.cmaketoolchain:generator=Ninja && cmake --preset conan-debug",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "llvm-vs-code-extensions.vscode-clangd",
+                "ms-vscode.cpptools"
+            ],
+            "settings": {
+                // C/C++ от Microsoft нужен только для отладчика, подсказки даёт clangd
+                "C_Cpp.intelliSenseEngine": "disabled",
+                "[cpp]": {
+                    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+                    "editor.formatOnSave": true
+                }
+            }
+        }
+    }
+}

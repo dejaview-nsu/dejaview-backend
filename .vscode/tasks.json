@@ -1,0 +1,21 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            // Ctrl+Shift+B (на Mac Cmd+Shift+B); ошибки компиляции попадают в панель Problems
+            "label": "build",
+            "type": "shell",
+            "command": "cmake --build build",
+            "problemMatcher": "$gcc",
+            "group": {"kind": "build", "isDefault": true}
+        },
+        {
+            // Ctrl+Shift+P (на Mac Cmd+Shift+P) → Tasks: Run Test Task
+            "label": "test",
+            "type": "shell",
+            "command": "cmake --build build --target check",
+            "problemMatcher": "$gcc",
+            "group": {"kind": "test", "isDefault": true}
+        }
+    ]
+}
