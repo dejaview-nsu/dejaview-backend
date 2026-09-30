@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            // Cmd+Shift+B; ошибки компиляции попадают в панель Problems
+            // Ctrl+Shift+B (на Mac Cmd+Shift+B); ошибки компиляции попадают в панель Problems
             "label": "build",
             "type": "shell",
             "command": "cmake --build build",
@@ -10,7 +10,7 @@
             "group": {"kind": "build", "isDefault": true}
         },
         {
-            // Cmd+Shift+P → Tasks: Run Test Task
+            // Ctrl+Shift+P (на Mac Cmd+Shift+P) → Tasks: Run Test Task
             "label": "test",
             "type": "shell",
             "command": "cmake --build build --target check",

@@ -1,12 +1,4 @@
-__pycache__/
-*.py[cod]
-.venv/
-venv/
 .env
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
 build/
 CMakeUserPresets.json
 .cache/
