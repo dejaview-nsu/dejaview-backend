@@ -5,6 +5,12 @@
         "context": "..",
         "target": "dev"
     },
+    "mounts": [
+        "source=claude-code-config-${devcontainerId},target=/root/.claude,type=volume"
+    ],
+    "containerEnv": {
+        "CLAUDE_CONFIG_DIR": "/root/.claude"
+    },
     // Наш код в Debug для отладчика, библиотеки в Release (уже собраны в образе).
     // Conan создаёт preset conan-debug с Ninja: его же подхватывает расширение CMake Tools.
     "postCreateCommand": "conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23 -s '&:build_type=Debug' -c tools.cmake.cmaketoolchain:generator=Ninja && cmake --preset conan-debug",

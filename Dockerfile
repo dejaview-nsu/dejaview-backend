@@ -16,8 +16,9 @@ RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing 
 # среда разработки для VS Code Dev Containers: всё то же + clangd, clang-format, gdb, git и gcovr
 FROM deps AS dev
 RUN apt-get update \
- && apt-get install -y --no-install-recommends clangd clang-format gdb git openssh-client \
+ && apt-get install -y --no-install-recommends clangd-20 clang-format gdb git openssh-client \
  && rm -rf /var/lib/apt/lists/* \
+ && ln -s clangd-20 /usr/bin/clangd \
  && pipx install gcovr==8.6
 
 # скомпилированный код и тесты
