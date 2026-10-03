@@ -1,3 +1,4 @@
+#include "auth/session.hpp"
 #include "config.hpp"
 #include "health.hpp"
 
@@ -31,10 +32,14 @@ int main()
         .addListener("0.0.0.0", config.port)
         .setThreadNum(0)
         .enableServerHeader(false)
+        // русский текст ошибок в JSON как есть, а не Во...: так его видно в curl и логах
+        .setUnicodeEscapingInJson(false)
         // Только API. Иначе Drogon отдаёт файлы из рабочей папки (в контейнере это /), в том числе
         // загруженные пользователями: корень статики, которого нет, даёт 404 на любой другой путь
         .setDocumentRoot("/nonexistent")
         .setUploadPath("/tmp/dejaview-uploads")
         .registerHandler("/health", [db](HttpRequestPtr) { return healthHandler(db); }, {Get})
+        .registerHandler("/api/v1/auth/session",
+                         [db](HttpRequestPtr req) { return getSessionHandler(db, req); }, {Get})
         .run();
 }

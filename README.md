@@ -16,7 +16,7 @@ REST API мультимодального поиска, бизнес-логик�
 - [Drogon](https://github.com/drogonframework/drogon) 1.9.13: HTTP-сервер, JSON, клиент PostgreSQL
 - Conan 2: зависимости C++, точные версии в `conan.lock`
 - PostgreSQL 16, миграции [dbmate](https://github.com/amacneil/dbmate)
-- GoogleTest, gcovr, clang-format 18
+- GoogleTest, gcovr, clang-format 20
 - Сборка и запуск в Docker: компилятор на компьютере не нужен
 
 ## Быстрый старт
