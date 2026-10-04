@@ -16,6 +16,7 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("PORT");
         setenv("DATABASE_URL", "postgres://user:secret@db:5432/dejaview", 1);
         setenv("APP_URL", "https://dejaview.ru", 1);
+        unsetenv("SMARTCAPTCHA_SERVER_KEY");
     }
 
     void TearDown() override
@@ -23,6 +24,7 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("PORT");
         unsetenv("DATABASE_URL");
         unsetenv("APP_URL");
+        unsetenv("SMARTCAPTCHA_SERVER_KEY");
     }
 };
 
@@ -92,4 +94,11 @@ TEST_F(LoadConfigTest, StripsTrailingSlashFromAppUrl)
     // иначе ссылка в письме получится https://dejaview.ru//confirm-email
     setenv("APP_URL", "http://localhost:57437/", 1);
     EXPECT_EQ(loadConfig().appUrl, "http://localhost:57437");
+}
+
+TEST_F(LoadConfigTest, CaptchaKeyIsOptional)
+{
+    EXPECT_EQ(loadConfig().smartCaptchaServerKey, "");
+    setenv("SMARTCAPTCHA_SERVER_KEY", "ysc2_secret", 1);
+    EXPECT_EQ(loadConfig().smartCaptchaServerKey, "ysc2_secret");
 }

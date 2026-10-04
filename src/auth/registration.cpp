@@ -1,6 +1,7 @@
 #include "auth/registration.hpp"
 
 #include "auth/crypto.hpp"
+#include "auth/http_common.hpp"
 #include "auth/security_log.hpp"
 #include "auth/session.hpp"
 #include "auth/validation.hpp"
@@ -18,18 +19,6 @@ using namespace drogon;
 namespace
 {
 constexpr int kResendSeconds = 60;  // #17148 п. 2.2 шаг 10
-
-// Тело не JSON-объект (тег Auth, раздел «Ошибки»).
-HttpResponsePtr malformedBody()
-{
-    return errorResponse(k400BadRequest, "AUTH_VALIDATION_ERROR",
-                         "Произошла ошибка. Попробуйте позже");
-}
-
-HttpResponsePtr fieldErrorResponse(const FieldError &error)
-{
-    return errorResponse(k400BadRequest, error.code, error.message, error.field);
-}
 
 HttpResponsePtr emailTaken()
 {
@@ -53,13 +42,6 @@ HttpResponsePtr confirmationSent(int resendAfter, HttpStatusCode status)
     return response;
 }
 
-// Строковое поле тела. Нет поля или не строка - пустая строка: валидация ответит «Введите ...».
-std::string stringField(const Json::Value &body, const char *name)
-{
-    const Json::Value &value = body[name];
-    return value.isString() ? value.asString() : "";
-}
-
 int currentYear()
 {
     using namespace std::chrono;
@@ -78,18 +60,16 @@ std::string confirmationPayload(const std::string &appUrl, const std::string &to
 
 Task<HttpResponsePtr> registerHandler(orm::DbClientPtr db, std::string appUrl, HttpRequestPtr req)
 {
-    const auto body = req->getJsonObject();
-    if (!body || !body->isObject())
+    const Json::Value *json = jsonBody(req);
+    if (!json)
     {
         co_return malformedBody();
     }
-    // Константная ссылка: у неконстантного Json::Value оператор [] добавляет отсутствующее поле
-    const Json::Value &json = *body;
-    const std::string username = stringField(json, "username");
-    const std::string email = stringField(json, "email");
-    const std::string password = stringField(json, "password");
+    const std::string username = stringField(*json, "username");
+    const std::string email = stringField(*json, "email");
+    const std::string password = stringField(*json, "password");
     // Не целое число - та же ошибка, что и год вне диапазона: 0 в диапазон не попадает
-    const Json::Value &birthYearValue = json["birth_year"];
+    const Json::Value &birthYearValue = (*json)["birth_year"];
     const int birthYear = birthYearValue.isInt() ? birthYearValue.asInt() : 0;
 
     // Порядок проверок - порядок полей формы (#17148 п. 2.2 шаг 3): ответ - первая ошибка
@@ -152,13 +132,11 @@ Task<HttpResponsePtr> registerHandler(orm::DbClientPtr db, std::string appUrl, H
 
 Task<HttpResponsePtr> confirmEmailHandler(orm::DbClientPtr db, HttpRequestPtr req)
 {
-    const auto body = req->getJsonObject();
-    if (!body || !body->isObject())
+    const Json::Value *json = jsonBody(req);
+    if (!json)
     {
         co_return malformedBody();
     }
-    // Константная ссылка: у неконстантного Json::Value оператор [] добавляет отсутствующее поле
-    const Json::Value &json = *body;
 
     // Ссылка гасится и учётная запись активируется одним запросом. Истёкшие ссылки не удаляем:
     // по ним можно запросить новую (POST /auth/resend-confirmation с token).
@@ -168,7 +146,7 @@ Task<HttpResponsePtr> confirmEmailHandler(orm::DbClientPtr db, HttpRequestPtr re
         "UPDATE users SET status = 'active' FROM t "
         "WHERE users.user_id = t.user_id AND users.status = 'unconfirmed' "
         "RETURNING users.user_id",
-        tokenHash(stringField(json, "token")));
+        tokenHash(stringField(*json, "token")));
     // Истекла, заменена новой или уже использована - один ответ (#17148 п. 2.5)
     if (activated.empty())
     {
@@ -187,18 +165,16 @@ Task<HttpResponsePtr> confirmEmailHandler(orm::DbClientPtr db, HttpRequestPtr re
 Task<HttpResponsePtr> resendConfirmationHandler(orm::DbClientPtr db, std::string appUrl,
                                                 HttpRequestPtr req)
 {
-    const auto body = req->getJsonObject();
-    if (!body || !body->isObject())
+    const Json::Value *json = jsonBody(req);
+    if (!json)
     {
         co_return malformedBody();
     }
-    // Константная ссылка: у неконстантного Json::Value оператор [] добавляет отсутствующее поле
-    const Json::Value &json = *body;
 
     // Неподтверждённая учётная запись по токену из старой ссылки (в том числе истёкшей) или
     // по login
     std::optional<std::int64_t> userId;
-    if (const std::string token = stringField(json, "token"); !token.empty())
+    if (const std::string token = stringField(*json, "token"); !token.empty())
     {
         const auto found = co_await db->execSqlCoro(
             "SELECT user_id FROM auth_tokens JOIN users USING (user_id) "
@@ -212,7 +188,7 @@ Task<HttpResponsePtr> resendConfirmationHandler(orm::DbClientPtr db, std::string
     }
     else
     {
-        const std::string login = stringField(json, "login");
+        const std::string login = stringField(*json, "login");
         if (const auto error = validateLogin(login))
         {
             co_return fieldErrorResponse(*error);

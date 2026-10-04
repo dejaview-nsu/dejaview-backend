@@ -27,14 +27,6 @@ FieldError validationError(std::string_view message, std::string_view field)
     return makeError(kValidationError, message, field);
 }
 
-// Число символов UTF-8: байты продолжения (10xxxxxx) не считаются, у каждого символа ровно
-// один начальный байт.
-std::size_t utf8Length(std::string_view text)
-{
-    return std::ranges::count_if(
-        text, [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; });
-}
-
 bool isUpper(char c) { return c >= 'A' && c <= 'Z'; }
 
 bool isLower(char c) { return c >= 'a' && c <= 'z'; }
@@ -76,6 +68,13 @@ bool isValidDomain(std::string_view domain)
     return parts >= 2;
 }
 }  // namespace
+
+// Байты продолжения (10xxxxxx) не считаются: у каждого символа ровно один начальный байт.
+std::size_t utf8Length(std::string_view text)
+{
+    return std::ranges::count_if(
+        text, [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; });
+}
 
 std::optional<FieldError> validateUsername(std::string_view username)
 {

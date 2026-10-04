@@ -14,7 +14,11 @@ add_library(dejaview-core STATIC
     src/config.cpp
     src/error_response.cpp
     src/health.cpp
+    src/auth/captcha.cpp
     src/auth/crypto.cpp
+    src/auth/http_common.cpp
+    src/auth/login.cpp
+    src/auth/login_rules.cpp
     src/auth/registration.cpp
     src/auth/security_log.cpp
     src/auth/session.cpp
@@ -31,6 +35,7 @@ enable_testing()
 add_executable(dejaview-tests
     tests/config_test.cpp
     tests/auth/crypto_test.cpp
+    tests/auth/login_rules_test.cpp
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp)
 target_link_libraries(dejaview-tests PRIVATE dejaview-core GTest::gtest_main)

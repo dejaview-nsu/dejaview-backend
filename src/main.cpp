@@ -1,3 +1,4 @@
+#include "auth/login.hpp"
 #include "auth/registration.hpp"
 #include "auth/session.hpp"
 #include "config.hpp"
@@ -6,12 +7,15 @@
 
 #include <drogon/drogon.h>
 
+#include <cstdio>
 #include <exception>
 
 using namespace drogon;
 
 int main()
 {
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+
     Config config;
     try
     {
@@ -27,6 +31,12 @@ int main()
     // ошибкой, а клиент сам переподключается.
     auto db = orm::DbClient::newPgClient(config.databaseUrl, 4);
     db->setTimeout(2.0);
+
+    if (config.smartCaptchaServerKey.empty())
+    {
+        LOG_WARN << "SMARTCAPTCHA_SERVER_KEY не задан: CAPTCHA при входе отключена. "
+                    "Допустимо только локально";
+    }
 
     LOG_INFO << "dejaview-backend слушает порт " << config.port;
 
@@ -48,6 +58,9 @@ int main()
                          { return registerHandler(db, appUrl, req); }, {Post})
         .registerHandler("/api/v1/auth/confirm-email",
                          [db](HttpRequestPtr req) { return confirmEmailHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/auth/login",
+                         [db, captchaKey = config.smartCaptchaServerKey](HttpRequestPtr req)
+                         { return loginHandler(db, captchaKey, req); }, {Post})
         .registerHandler("/api/v1/auth/resend-confirmation",
                          [db, appUrl = config.appUrl](HttpRequestPtr req)
                          { return resendConfirmationHandler(db, appUrl, req); }, {Post})

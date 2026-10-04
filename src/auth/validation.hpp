@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -38,3 +39,6 @@ std::optional<FieldError> validatePassword(std::string_view password);
 
 // Имя пользователя или email для входа: строка с `@` проверяется как email, без `@` - как имя.
 std::optional<FieldError> validateLogin(std::string_view login);
+
+// Число символов в строке UTF-8, а не байтов: в «аб» 2 символа и 4 байта.
+std::size_t utf8Length(std::string_view text);

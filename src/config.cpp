@@ -71,5 +71,6 @@ Config loadConfig()
         .port = readPort(),
         .databaseUrl = readDatabaseUrl(),
         .appUrl = readAppUrl(),
+        .smartCaptchaServerKey = std::string(env("SMARTCAPTCHA_SERVER_KEY").value_or("")),
     };
 }
