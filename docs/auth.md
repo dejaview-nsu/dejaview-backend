@@ -1,0 +1,123 @@
+# Авторизация
+
+Регистрация с подтверждением email, вход по паролю с защитой от подбора и CAPTCHA, серверные
+сессии, вход через Яндекс, Google и VK ID, письма через очередь (#17826). Контракт - теги Auth и
+OIDC в `dejaview-docs/api/openapi.yaml`, таблицы - `dejaview-docs/contracts/db-schema.md`. Выход
+(#17151) и восстановление пароля (#17150) - в Sprint 2.
+
+## Защита эндпоинта сессией
+
+Эндпоинту с `security: [{sessionCookie: []}]` в контракте (поиск, списки, оценки) достаточно
+одного вызова `requireSession` из `src/auth/session.hpp`:
+
+```cpp
+#include "auth/session.hpp"
+
+Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
+{
+    const auto user = co_await requireSession(db, req);
+    if (!user)
+    {
+        co_return user.error();  // готовый ответ 401 по контракту
+    }
+    // user->userId - владелец сессии
+    ...
+}
+```
+
+Маршрут - в `main.cpp`, под `/api/v1`: cookie `dv_session` (`Path=/api/v1`) браузер отправляет
+только туда.
+
+```cpp
+.registerHandler("/api/v1/search/text",
+                 [db](HttpRequestPtr req) { return searchTextHandler(db, req); }, {Post})
+```
+
+| Запрос | Результат `requireSession` |
+|---|---|
+| нет cookie `dv_session` | 401 `SESSION_REQUIRED` «Войдите, чтобы продолжить» |
+| сессия истекла, завершена, не найдена или пользователь заблокирован | 401 `SESSION_EXPIRED` «Сессия истекла. Войдите снова», cookie стирается |
+| сессия действительна | `SessionUser`: `userId`, `username`, `hasPassword`, `expiresAt` |
+
+- Отказ сам пишется в журнал `security_events` как `access_denied` (#17094 п. 5.1).
+- Проверка - один запрос к БД. БД недоступна - исключение, общий обработчик в `main.cpp` ответит
+  `500 INTERNAL_ERROR`.
+- Чьи данные отдавать, решает только сессия: владелец берётся из `user->userId`, не из пути и не
+  из тела запроса (тег Auth, «Контроль прав»).
+
+## Сессия для локальной проверки
+
+1. Запустить backend и почту для разработки: `docker compose up -d mailpit`.
+2. Зарегистрироваться:
+
+   ```sh
+   curl -X POST localhost:8081/api/v1/auth/register -H 'Content-Type: application/json' \
+     -d '{"username":"tester","email":"tester@example.com","birth_year":2000,"password":"Kino#2026"}'
+   ```
+
+3. Открыть письмо на http://localhost:8025 и взять токен из ссылки `.../confirm-email?token=...`.
+4. Подтвердить email - в ответе cookie сессии:
+
+   ```sh
+   curl -i -X POST localhost:8081/api/v1/auth/confirm-email -H 'Content-Type: application/json' \
+     -d '{"token":"<токен из письма>"}'
+   # Set-Cookie: dv_session=<токен сессии>; ...
+   ```
+
+   Дальше входить можно и без писем: `POST /api/v1/auth/login` с `{"login":"tester",
+   "password":"Kino#2026"}`, cookie - в том же заголовке ответа.
+
+5. Передавать cookie явно - у неё флаг `Secure`, и из файла cookie curl по `http` её может не
+   отправить:
+
+   ```sh
+   curl -b 'dv_session=<токен сессии>' localhost:8081/api/v1/auth/session
+   ```
+
+## Эндпоинты и код
+
+| Эндпоинты | Код |
+|---|---|
+| `POST /auth/register`, `/auth/confirm-email`, `/auth/resend-confirmation` | `src/auth/registration.cpp` |
+| `POST /auth/login` | `src/auth/login.cpp`, правила подбора - `login_rules.cpp`, CAPTCHA - `captcha.cpp` |
+| `GET /auth/session` | `src/auth/session.cpp` |
+| `GET /auth/oidc/{provider}/start`, `/callback`, `GET /auth/oidc/pending`, `POST /auth/oidc/complete` | `src/auth/oidc.cpp`, разбор профилей - `oidc_profile.cpp` |
+
+Общее: `validation.cpp` - правила полей, `crypto.cpp` - Argon2id, токены, SHA-256, PKCE,
+`security_log.cpp` - журнал безопасности, `http_common.cpp` - разбор тела и типовые ответы.
+Письма - `src/email/`: шаблоны `templates/*.html`, формат письма, отправка из `email_outbox`.
+`src/background.cpp` - фоновый поток: письма раз в 5 с, очистка устаревшего раз в час.
+
+Чистая логика (валидация, правила подбора, формат писем, разбор профилей) - без БД и сети,
+покрыта модульными тестами в `tests/auth/` и `tests/email/`.
+
+## Решения, которые стоит знать при ревью
+
+- **Сессии серверные.** В cookie случайный токен 256 бит, в БД - его SHA-256: копия таблицы не
+  даёт войти. Срок 24 ч без продления (#17094 п. 1.3). Новый вход удаляет сессию из cookie.
+- **Атомарность одним запросом.** Регистрация (пользователь + ссылка + письмо), подтверждение и
+  завершение OIDC - один SQL-запрос с `WITH`: он выполняется целиком или никак. Объекты
+  транзакций Drogon не используются.
+- **Попытка входа засчитывается до проверки пароля** одним `UPDATE ... WHERE ... RETURNING`.
+  Иначе параллельные запросы читали бы один счётчик и обходили лимит: проверено, 20 параллельных
+  попыток - ровно 5 проверок пароля.
+- **CAPTCHA - fail-open.** Если SmartCaptcha недоступна, вход не блокируется (рекомендация
+  Яндекса), от подбора защищает блокировка после 5 попыток. Ответ 4xx от SmartCaptcha - неверный
+  ключ - пишется в лог как `ERROR`.
+- **Письма - transactional outbox.** Обработчик кладёт письмо в `email_outbox` тем же запросом,
+  что и данные; отправляет фоновый поток. Порция берётся «в аренду» (`next_attempt_at` + 10 мин,
+  `FOR UPDATE SKIP LOCKED`) без долгих транзакций: несколько экземпляров backend не шлют дубли.
+  Повторы через 1, 2, 4 ... 60 минут, после 8 неудач - `failed`.
+- **OIDC - authorization code со `state` и PKCE (S256).** Учётная запись ищется по паре
+  (провайдер, `sub`), затем по email; привязка к найденной по email - только после входа с
+  паролем. Email, не подтверждённый провайдером, не принимается. Учётная запись создаётся на шаге
+  «Завершение регистрации» с годом рождения, до этого данные ждут в `oidc_pending` 30 минут.
+  Провайдеры - таблица `kProviders` в `oidc.cpp`.
+- **Очистка** раз в час: истёкшие сессии и `oidc_pending`, ссылки из писем через 7 дней после
+  истечения (по ним работает «Отправить новую ссылку»), журнал старше 30 дней (#17094 п. 5.2),
+  неотправленные письма старше суток.
+
+## Провайдеры OIDC
+
+Регистрация приложений у Яндекса, Google и VK ID, проверка входа и частые ошибки -
+[oidc.md](oidc.md). Письма - [email.md](email.md), развёртывание - [deployment.md](deployment.md).

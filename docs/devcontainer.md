@@ -14,7 +14,7 @@ CMake, Conan с готовыми библиотеками, clangd, gdb, clang-fo
 4. Создать `.env`: `cp .env.example .env`. БД из `dejaview-infra` должна быть запущена, см.
    [«Быстрый старт»](../README.md#быстрый-старт).
 5. Запустить почту для разработки - на компьютере, не в контейнере: `docker compose up -d mailpit`.
-   Письма, которые отправляет backend, видно на http://localhost:8025.
+   Письма, которые отправляет backend, видно на http://localhost:8025, подробнее - [email.md](email.md).
 
 ## Работа
 

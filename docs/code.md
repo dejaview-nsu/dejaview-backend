@@ -4,11 +4,15 @@
 
 ```
 src/
-  main.cpp          точка входа: конфигурация → БД → маршруты → run()
-  config.hpp/.cpp   настройки из переменных окружения
-  health.hpp/.cpp   GET /health
-tests/              модульные тесты
-db/migrations/      миграции dbmate
+  main.cpp              точка входа: конфигурация → БД → фоновые задачи → маршруты → run()
+  config.hpp/.cpp       настройки из переменных окружения
+  error_response.*      тело ошибки Error из контракта
+  health.*              GET /health
+  background.*          фоновый поток: письма из очереди, очистка устаревшего
+  auth/                 регистрация, вход, сессии, OIDC - docs/auth.md
+  email/                письма: шаблоны templates/*.html, формат, отправка из очереди
+tests/                  модульные тесты, раскладка как в src/
+db/migrations/          миграции dbmate
 ```
 
 - Код делится по разделам предметной области, как теги в `api/openapi.yaml`: `movies`, `search`,
