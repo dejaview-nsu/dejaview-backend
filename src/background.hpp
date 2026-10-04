@@ -13,3 +13,7 @@
 // Поток останавливается и дожидается конца текущей задачи, когда разрушается возвращённый
 // объект - в конце main.
 std::jthread startBackgroundJobs(drogon::orm::DbClientPtr db, SmtpConfig smtp);
+
+// Удаляет устаревшее: истёкшие сессии и oidc_pending, ссылки из писем через 7 дней после
+// истечения, журнал безопасности старше 30 дней, неотправленные письма старше суток.
+void deleteExpired(const drogon::orm::DbClientPtr &db);

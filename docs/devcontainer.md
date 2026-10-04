@@ -23,7 +23,7 @@ CMake, Conan с готовыми библиотеками, clangd, gdb, clang-fo
 | Собрать | `Ctrl+Shift+B` (на Mac `Cmd+Shift+B`) или `cmake --build build` |
 | Запустить под отладчиком | `F5`: соберёт и запустит с переменными из `.env`; точка останова - клик слева от номера строки |
 | Запустить в терминале | `set -a && . ./.env && set +a && ./build/dejaview-backend` |
-| Тесты | `cmake --build build --target check` или `Ctrl+Shift+P` (на Mac `Cmd+Shift+P`) → **Tasks: Run Test Task** |
+| Тесты | `cmake --build build --target check` или `Ctrl+Shift+P` (на Mac `Cmd+Shift+P`) → **Tasks: Run Test Task**; для интеграционных - `docker compose up -d postgres-test` на компьютере, см. [code.md](code.md#тесты) |
 | Покрытие | `cmake --build build --target coverage`, по строкам - `build/coverage/index.html` |
 | Форматирование | само при сохранении, правила в `.clang-format` |
 | Добавить библиотеку | в `conanfile.txt`, затем обновить `conan.lock` командами из шапки `conanfile.txt` |

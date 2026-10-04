@@ -7,6 +7,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 find_package(Drogon CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
+find_package(PostgreSQL CONFIG REQUIRED)
 find_package(libsodium CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 
@@ -56,8 +57,18 @@ add_executable(dejaview-tests
     tests/auth/oidc_profile_test.cpp
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
-    tests/email/message_test.cpp)
-target_link_libraries(dejaview-tests PRIVATE dejaview-core GTest::gtest_main)
+    tests/email/message_test.cpp
+    # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
+    tests/integration/db_test.cpp
+    tests/integration/background_test.cpp
+    tests/integration/login_test.cpp
+    tests/integration/oidc_test.cpp
+    tests/integration/registration_test.cpp)
+target_include_directories(dejaview-tests PRIVATE tests)
+# миграции интеграционные тесты применяют сами - через libpq, как dbmate
+target_compile_definitions(dejaview-tests PRIVATE
+    DEJAVIEW_MIGRATIONS_DIR="${CMAKE_SOURCE_DIR}/db/migrations")
+target_link_libraries(dejaview-tests PRIVATE dejaview-core PostgreSQL::PostgreSQL GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(dejaview-tests)
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure DEPENDS dejaview-tests)
@@ -67,9 +78,8 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure DEPEN
 # подробный по строкам - build/coverage/index.html
 target_compile_options(dejaview-core PRIVATE $<$<CONFIG:Debug>:--coverage>)
 target_link_options(dejaview-core PUBLIC $<$<CONFIG:Debug>:--coverage>)
-# Порог 70% - #17098 п. 1.1: ниже - команда завершается ошибкой.
-# ponytail: порог общий на весь src/; когда появятся auth, search, users - отдельный прогон
-# gcovr с --filter по их файлам и порогом 80 (#17098 п. 1.2)
+# Пороги - #17098: весь src/ - 70% (п. 1.1), авторизация src/auth/ - 80% (п. 1.2). Ниже - команда
+# завершается ошибкой. Интеграционные тесты нужны для обоих: задать TEST_DATABASE_URL.
 add_custom_target(coverage
     # счётчики копятся между запусками (и от ручного запуска сервера) - обнуляем
     COMMAND find . -name "*.gcda" -delete
@@ -78,6 +88,8 @@ add_custom_target(coverage
     COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/
             --gcov-executable gcov-14 --txt --html-details coverage/index.html
             --fail-under-line 70 .
+    COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/auth/
+            --gcov-executable gcov-14 --txt-summary --fail-under-line 80 .
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS dejaview-tests
     VERBATIM)

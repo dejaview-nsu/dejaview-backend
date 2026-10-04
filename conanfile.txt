@@ -10,6 +10,7 @@ libcurl/8.22.0
 
 [test_requires]
 gtest/1.18.0
+libpq/17.11
 
 [options]
 drogon/*:with_boost=False

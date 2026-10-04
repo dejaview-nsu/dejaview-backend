@@ -9,7 +9,9 @@
         "source=claude-code-config-${devcontainerId},target=/root/.claude,type=volume"
     ],
     "containerEnv": {
-        "CLAUDE_CONFIG_DIR": "/root/.claude"
+        "CLAUDE_CONFIG_DIR": "/root/.claude",
+        // БД для интеграционных тестов - сервис postgres-test из compose.yaml
+        "TEST_DATABASE_URL": "postgres://dejaview:dejaview_test_only@host.docker.internal:57439/dejaview_test?sslmode=disable"
     },
     // Наш код в Debug для отладчика, библиотеки в Release (уже собраны в образе).
     // Conan создаёт preset conan-debug с Ninja: его же подхватывает расширение CMake Tools.

@@ -12,10 +12,8 @@
 using namespace drogon;
 using namespace std::chrono_literals;
 
-namespace
-{
-// Удаление устаревшего (contracts/db-schema.md). Одним запросом: каждый DELETE в WITH
-// выполняется, даже если результат не читают.
+// Одним запросом (contracts/db-schema.md): каждый DELETE в WITH выполняется, даже если результат
+// не читают.
 void deleteExpired(const orm::DbClientPtr &db)
 {
     db->execSqlSync(
@@ -31,7 +29,6 @@ void deleteExpired(const orm::DbClientPtr &db)
         "AND created_at < now() - interval '24 hours') "
         "SELECT 1");
 }
-}  // namespace
 
 std::jthread startBackgroundJobs(orm::DbClientPtr db, SmtpConfig smtp)
 {

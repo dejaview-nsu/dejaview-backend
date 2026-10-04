@@ -14,3 +14,17 @@ services:
     ports:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
+
+  # БД для интеграционных тестов: docker compose up -d postgres-test. Данные в памяти - при каждом
+  # запуске пустая, рабочую БД из dejaview-infra тесты не трогают. Миграции тесты применяют сами
+  postgres-test:
+    profiles: [test]
+    image: postgres:16.11
+    environment:
+      POSTGRES_DB: dejaview_test
+      POSTGRES_USER: dejaview
+      POSTGRES_PASSWORD: dejaview_test_only
+    tmpfs:
+      - /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:57439:5432"
