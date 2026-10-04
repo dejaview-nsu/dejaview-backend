@@ -14,14 +14,18 @@
 // OAuth2 authorization code flow со state и PKCE: браузер уходит к провайдеру и возвращается с
 // кодом, обмен кода на токен и запрос профиля делает backend. Незавершённый вход живёт в
 // oidc_pending, к браузеру его привязывает cookie dv_oidc (30 минут).
-// Подключён Яндекс; Google и VK добавляются так же: адрес авторизации и функция профиля.
+// Подключены Яндекс и Google; новый провайдер - строка в таблице kProviders (oidc.cpp).
 
 struct OidcSettings
 {
     std::string appUrl;  // страница SPA {appUrl}/auth/oidc - исход входа
     std::string apiUrl;  // redirect_uri: {apiUrl}/api/v1/auth/oidc/{provider}/callback
     OidcClient yandex;
+    OidcClient google;
 };
+
+// Подключённые провайдеры для лога при запуске: «Яндекс, Google». Пусто - ни одного.
+std::string enabledOidcProviders(const OidcSettings &settings);
 
 // GET /auth/oidc/{provider}/start: запись в oidc_pending, cookie dv_oidc и переход к провайдеру.
 drogon::Task<drogon::HttpResponsePtr> oidcStartHandler(drogon::orm::DbClientPtr db,

@@ -21,7 +21,8 @@ class LoadConfigTest : public ::testing::Test
         setenv("SMTP_FROM", "noreply@dejaview.ru", 1);
         unsetenv("SMTP_USER");
         unsetenv("SMTP_PASSWORD");
-        for (const char *name : {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET"})
+        for (const char *name : {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
+                                 "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET"})
         {
             unsetenv(name);
         }
@@ -172,6 +173,7 @@ TEST_F(LoadConfigTest, OidcProviderIsOptional)
     const Config config = loadConfig();
     EXPECT_EQ(config.yandex.clientId, "id");
     EXPECT_EQ(config.yandex.clientSecret, "secret");
+    EXPECT_EQ(config.google.clientId, "");  // каждый провайдер включается отдельно
     unsetenv("OIDC_YANDEX_CLIENT_ID");
     unsetenv("OIDC_YANDEX_CLIENT_SECRET");
 }

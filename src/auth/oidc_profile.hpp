@@ -19,6 +19,10 @@ struct OidcProfile
 // Профиль из ответа Яндекс ID (login.yandex.ru/info). nullopt - в ответе нет id.
 std::optional<OidcProfile> parseYandexProfile(const Json::Value &info);
 
+// Профиль из стандартного OIDC userinfo Google (openidconnect.googleapis.com/v1/userinfo):
+// sub, email, email_verified, name. nullopt - в ответе нет sub.
+std::optional<OidcProfile> parseGoogleProfile(const Json::Value &info);
+
 // Название провайдера для текстов ошибок: «Не удалось выполнить вход через Яндекс».
 std::string_view providerTitle(std::string_view provider);
 

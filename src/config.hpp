@@ -38,6 +38,7 @@ struct Config
     // frontend и API на одном домене. Локально они на разных портах
     std::string apiUrl;
     OidcClient yandex;
+    OidcClient google;
 };
 
 // Читает настройки из переменных окружения. При некорректном значении бросает std::runtime_error.

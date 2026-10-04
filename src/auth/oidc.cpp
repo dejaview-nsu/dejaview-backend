@@ -10,6 +10,7 @@
 
 #include <drogon/drogon.h>
 
+#include <algorithm>
 #include <format>
 #include <optional>
 
@@ -38,16 +39,6 @@ Cookie clearOidcCookie()
     cookie.setPath("/api/v1/auth");
     cookie.setMaxAge(0);
     return cookie;
-}
-
-// Приложение провайдера, если вход через него подключён
-const OidcClient *clientFor(const OidcSettings &settings, std::string_view provider)
-{
-    if (provider == "yandex" && !settings.yandex.clientId.empty())
-    {
-        return &settings.yandex;
-    }
-    return nullptr;
 }
 
 std::string redirectUri(const OidcSettings &settings, std::string_view provider)
@@ -88,13 +79,45 @@ Json::Value oidcDetails(std::string_view provider)
     return details;
 }
 
-// Обмен кода на токен и профиль у Яндекс ID (yandex.ru/dev/id). nullopt - провайдер ответил
-// ошибкой, подробности в логе. Недоступность сети - исключение.
-Task<std::optional<OidcProfile>> fetchYandexProfile(OidcClient client, std::string code,
-                                                    std::string codeVerifier)
+// Обмен кода на access_token (RFC 6749 п. 4.1.3): POST формы на адрес токенов провайдера.
+// Пустая строка - провайдер ответил ошибкой, подробности в логе. Сеть недоступна - исключение.
+Task<std::string> requestAccessToken(std::string host, HttpRequestPtr request,
+                                     std::string_view provider)
 {
     // ponytail: новый HTTP-клиент и TLS-рукопожатие на каждый вход; при нагрузке - общий клиент
-    auto oauth = HttpClient::newHttpClient("https://oauth.yandex.ru");
+    const auto response = co_await HttpClient::newHttpClient(host)->sendRequestCoro(request, 10);
+    const auto &json = response->getJsonObject();
+    const std::string token = json && json->get("access_token", Json::Value()).isString()
+                                  ? json->get("access_token", "").asString()
+                                  : "";
+    if (response->statusCode() != k200OK || token.empty())
+    {
+        // в ответе с ошибкой токена нет, только error и error_description - можно в лог
+        LOG_WARN << providerTitle(provider) << ": обмен кода на токен: " << response->statusCode()
+                 << ' ' << response->body();
+    }
+    co_return token;
+}
+
+// Профиль пользователя: GET с токеном в заголовке Authorization. nullopt - ошибка, в логе.
+Task<std::optional<Json::Value>> requestProfile(std::string host, HttpRequestPtr request,
+                                                std::string_view provider)
+{
+    const auto response = co_await HttpClient::newHttpClient(host)->sendRequestCoro(request, 10);
+    const auto &json = response->getJsonObject();
+    if (response->statusCode() != k200OK || !json)
+    {
+        LOG_WARN << providerTitle(provider) << ": профиль: " << response->statusCode();
+        co_return std::nullopt;
+    }
+    co_return *json;
+}
+
+// Яндекс ID (yandex.ru/dev/id): токен - oauth.yandex.ru/token, профиль - login.yandex.ru/info.
+// redirectUri при обмене Яндексу не нужен
+Task<std::optional<OidcProfile>> fetchYandexProfile(OidcClient client, std::string code,
+                                                    std::string codeVerifier, std::string)
+{
     auto tokenRequest = HttpRequest::newHttpFormPostRequest();
     tokenRequest->setPath("/token");
     tokenRequest->setParameter("grant_type", "authorization_code");
@@ -102,40 +125,101 @@ Task<std::optional<OidcProfile>> fetchYandexProfile(OidcClient client, std::stri
     tokenRequest->setParameter("client_id", client.clientId);
     tokenRequest->setParameter("client_secret", client.clientSecret);
     tokenRequest->setParameter("code_verifier", codeVerifier);
-    const auto tokenResponse = co_await oauth->sendRequestCoro(tokenRequest, 10);
-    const auto &token = tokenResponse->getJsonObject();
-    const std::string accessToken = token && token->get("access_token", Json::Value()).isString()
-                                        ? token->get("access_token", "").asString()
-                                        : "";
-    if (tokenResponse->statusCode() != k200OK || accessToken.empty())
+    const std::string token =
+        co_await requestAccessToken("https://oauth.yandex.ru", tokenRequest, "yandex");
+    if (token.empty())
     {
-        // в ответе с ошибкой токена нет, только error и error_description - можно в лог
-        LOG_WARN << "Яндекс: обмен кода на токен: " << tokenResponse->statusCode() << ' '
-                 << tokenResponse->body();
         co_return std::nullopt;
     }
 
-    auto login = HttpClient::newHttpClient("https://login.yandex.ru");
     auto infoRequest = HttpRequest::newHttpRequest();
     infoRequest->setPath("/info");
     infoRequest->setParameter("format", "json");
-    infoRequest->addHeader("Authorization", "OAuth " + accessToken);
-    const auto infoResponse = co_await login->sendRequestCoro(infoRequest, 10);
-    const auto &info = infoResponse->getJsonObject();
-    if (infoResponse->statusCode() != k200OK || !info)
+    infoRequest->addHeader("Authorization", "OAuth " + token);
+    const auto info = co_await requestProfile("https://login.yandex.ru", infoRequest, "yandex");
+    co_return info ? parseYandexProfile(*info) : std::nullopt;
+}
+
+// Google (developers.google.com/identity/openid-connect): токен - oauth2.googleapis.com/token,
+// профиль - стандартный OIDC userinfo. Google требует при обмене тот же redirect_uri
+Task<std::optional<OidcProfile>> fetchGoogleProfile(OidcClient client, std::string code,
+                                                    std::string codeVerifier,
+                                                    std::string redirectUri)
+{
+    auto tokenRequest = HttpRequest::newHttpFormPostRequest();
+    tokenRequest->setPath("/token");
+    tokenRequest->setParameter("grant_type", "authorization_code");
+    tokenRequest->setParameter("code", code);
+    tokenRequest->setParameter("client_id", client.clientId);
+    tokenRequest->setParameter("client_secret", client.clientSecret);
+    tokenRequest->setParameter("code_verifier", codeVerifier);
+    tokenRequest->setParameter("redirect_uri", redirectUri);
+    const std::string token =
+        co_await requestAccessToken("https://oauth2.googleapis.com", tokenRequest, "google");
+    if (token.empty())
     {
-        LOG_WARN << "Яндекс: профиль: " << infoResponse->statusCode();
         co_return std::nullopt;
     }
-    co_return parseYandexProfile(*info);
+
+    auto infoRequest = HttpRequest::newHttpRequest();
+    infoRequest->setPath("/v1/userinfo");
+    infoRequest->addHeader("Authorization", "Bearer " + token);
+    const auto info =
+        co_await requestProfile("https://openidconnect.googleapis.com", infoRequest, "google");
+    co_return info ? parseGoogleProfile(*info) : std::nullopt;
+}
+
+// Провайдеры. Новый - строка в таблице и функция профиля: остальное (state, PKCE, поиск
+// учётной записи, привязка, регистрация) общее
+struct ProviderSpec
+{
+    std::string_view name;          // как в пути: /auth/oidc/{name}/start
+    std::string_view authorizeUrl;  // страница входа у провайдера
+    std::string_view scope;         // доступы: email и имя профиля (#17148 п. 3.2 шаг 7)
+    Task<std::optional<OidcProfile>> (*fetchProfile)(OidcClient client, std::string code,
+                                                     std::string codeVerifier,
+                                                     std::string redirectUri);
+    // Указатель на поле OidcSettings с приложением этого провайдера: settings.*client
+    OidcClient OidcSettings::*client;
+};
+
+constexpr ProviderSpec kProviders[] = {
+    {"yandex", "https://oauth.yandex.ru/authorize", "login:email login:info", fetchYandexProfile,
+     &OidcSettings::yandex},
+    {"google", "https://accounts.google.com/o/oauth2/v2/auth", "openid email profile",
+     fetchGoogleProfile, &OidcSettings::google},
+};
+
+// Провайдер из пути запроса: есть в таблице и для него задано приложение. Иначе nullptr
+const ProviderSpec *findProvider(const OidcSettings &settings, std::string_view name)
+{
+    const auto spec = std::ranges::find(kProviders, name, &ProviderSpec::name);
+    if (spec == std::ranges::end(kProviders) || (settings.*(spec->client)).clientId.empty())
+    {
+        return nullptr;
+    }
+    return spec;
 }
 }  // namespace
+
+std::string enabledOidcProviders(const OidcSettings &settings)
+{
+    std::string result;
+    for (const ProviderSpec &spec : kProviders)
+    {
+        if (!(settings.*(spec.client)).clientId.empty())
+        {
+            result += (result.empty() ? "" : ", ") + std::string(providerTitle(spec.name));
+        }
+    }
+    return result;
+}
 
 Task<HttpResponsePtr> oidcStartHandler(orm::DbClientPtr db, OidcSettings settings,
                                        HttpRequestPtr req, std::string provider)
 {
-    const OidcClient *client = clientFor(settings, provider);
-    if (!client)
+    const ProviderSpec *spec = findProvider(settings, provider);
+    if (!spec)
     {
         LOG_WARN << "OIDC: провайдер '" << provider << "' не подключён";
         co_return toSpa(settings, provider, "error");
@@ -151,13 +235,13 @@ Task<HttpResponsePtr> oidcStartHandler(orm::DbClientPtr db, OidcSettings setting
         "VALUES (decode($1, 'hex'), $2, $3, $4, now() + $5::int * interval '1 second')",
         tokenHash(token), provider, state, codeVerifier, kPendingSeconds);
 
-    // Email и имя профиля (#17148 п. 3.2 шаг 7): login:email и login:info
+    // Параметры одинаковы у всех провайдеров: это стандарт OAuth2 (RFC 6749) и PKCE (RFC 7636)
     auto response = HttpResponse::newRedirectionResponse(std::format(
-        "https://oauth.yandex.ru/authorize?response_type=code&client_id={}&redirect_uri={}"
-        "&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
-        utils::urlEncodeComponent(client->clientId),
+        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}"
+        "&code_challenge={}&code_challenge_method=S256",
+        spec->authorizeUrl, utils::urlEncodeComponent((settings.*(spec->client)).clientId),
         utils::urlEncodeComponent(redirectUri(settings, provider)),
-        utils::urlEncodeComponent("login:email login:info"), state, pkceChallenge(codeVerifier)));
+        utils::urlEncodeComponent(std::string(spec->scope)), state, pkceChallenge(codeVerifier)));
     response->addCookie(oidcCookie(token));
     co_return response;
 }
@@ -173,9 +257,9 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
         return response;
     };
 
-    const OidcClient *client = clientFor(settings, provider);
+    const ProviderSpec *spec = findProvider(settings, provider);
     const std::string cookie = req->getCookie("dv_oidc");
-    if (!client || cookie.empty())
+    if (!spec || cookie.empty())
     {
         co_return fail("провайдер не подключён или нет cookie dv_oidc");
     }
@@ -199,8 +283,9 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
     std::optional<OidcProfile> profile;
     try
     {
-        profile = co_await fetchYandexProfile(*client, req->getParameter("code"),
-                                              pending[0]["code_verifier"].as<std::string>());
+        profile = co_await spec->fetchProfile(settings.*(spec->client), req->getParameter("code"),
+                                              pending[0]["code_verifier"].as<std::string>(),
+                                              redirectUri(settings, provider));
     }
     catch (const std::exception &e)
     {

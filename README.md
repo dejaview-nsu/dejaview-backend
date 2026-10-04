@@ -62,6 +62,7 @@ docker compose up --build
 | `SMTP_USER`, `SMTP_PASSWORD` | нет | - | учётные данные SMTP; не заданы - без авторизации |
 | `API_URL` | нет | `APP_URL` | публичный адрес backend для redirect_uri OIDC: `{API_URL}/api/v1/auth/oidc/<провайдер>/callback` |
 | `OIDC_YANDEX_CLIENT_ID`, `OIDC_YANDEX_CLIENT_SECRET` | нет | - | приложение на oauth.yandex.ru; не заданы - вход через Яндекс выключен |
+| `OIDC_GOOGLE_CLIENT_ID`, `OIDC_GOOGLE_CLIENT_SECRET` | нет | - | клиент Web application в console.cloud.google.com; не заданы - вход через Google выключен |
 
 При некорректном значении сервер не стартует: пишет причину в лог (без пароля), код выхода 1.
 

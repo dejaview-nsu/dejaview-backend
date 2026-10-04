@@ -122,6 +122,20 @@ std::optional<OidcProfile> parseYandexProfile(const Json::Value &info)
         .subject = id, .email = email, .emailVerified = !email.empty(), .displayName = name};
 }
 
+std::optional<OidcProfile> parseGoogleProfile(const Json::Value &info)
+{
+    const std::string subject = info.get("sub", "").asString();
+    if (subject.empty())
+    {
+        return std::nullopt;
+    }
+    // email_verified по стандарту - true/false; asString даёт "true" и для строки "true"
+    return OidcProfile{.subject = subject,
+                       .email = info.get("email", "").asString(),
+                       .emailVerified = info.get("email_verified", false).asString() == "true",
+                       .displayName = info.get("name", "").asString()};
+}
+
 std::string_view providerTitle(std::string_view provider)
 {
     // Справочник: новый провайдер - новая строка. constexpr - таблица готова при компиляции

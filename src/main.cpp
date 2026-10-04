@@ -40,12 +40,14 @@ int main()
                     "Допустимо только локально";
     }
 
-    const OidcSettings oidc{
-        .appUrl = config.appUrl, .apiUrl = config.apiUrl, .yandex = config.yandex};
-    if (!config.yandex.clientId.empty())
+    const OidcSettings oidc{.appUrl = config.appUrl,
+                            .apiUrl = config.apiUrl,
+                            .yandex = config.yandex,
+                            .google = config.google};
+    if (const std::string providers = enabledOidcProviders(oidc); !providers.empty())
     {
-        LOG_INFO << "OIDC: вход через Яндекс подключён, redirect_uri " << config.apiUrl
-                 << "/api/v1/auth/oidc/yandex/callback";
+        LOG_INFO << "OIDC: подключены " << providers << ", redirect_uri " << config.apiUrl
+                 << "/api/v1/auth/oidc/<провайдер>/callback";
     }
 
     // Письма из очереди и очистка устаревшего

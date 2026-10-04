@@ -100,5 +100,7 @@ Config loadConfig()
         .apiUrl = readUrl("API_URL", env("API_URL").value_or(env("APP_URL").value_or(""))),
         .yandex = {.clientId = std::string(env("OIDC_YANDEX_CLIENT_ID").value_or("")),
                    .clientSecret = std::string(env("OIDC_YANDEX_CLIENT_SECRET").value_or(""))},
+        .google = {.clientId = std::string(env("OIDC_GOOGLE_CLIENT_ID").value_or("")),
+                   .clientSecret = std::string(env("OIDC_GOOGLE_CLIENT_SECRET").value_or(""))},
     };
 }

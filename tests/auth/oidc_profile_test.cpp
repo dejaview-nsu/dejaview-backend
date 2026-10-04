@@ -46,6 +46,33 @@ TEST(ParseYandexProfileTest, RejectsResponseWithoutId)
     EXPECT_EQ(parseYandexProfile(json(R"({"error": "invalid_token"})")), std::nullopt);
 }
 
+TEST(ParseGoogleProfileTest, ReadsStandardClaims)
+{
+    // ответ openidconnect.googleapis.com/v1/userinfo
+    const auto profile = parseGoogleProfile(json(R"({
+        "sub": "110169484474386276334", "name": "Ivan Petrov", "given_name": "Ivan",
+        "email": "ivan@gmail.com", "email_verified": true, "picture": "https://..."})"));
+    ASSERT_TRUE(profile);
+    EXPECT_EQ(profile->subject, "110169484474386276334");
+    EXPECT_EQ(profile->email, "ivan@gmail.com");
+    EXPECT_TRUE(profile->emailVerified);
+    EXPECT_EQ(profile->displayName, "Ivan Petrov");
+}
+
+TEST(ParseGoogleProfileTest, UnverifiedEmailIsNotTrusted)
+{
+    // Google сообщает, подтвердил ли он адрес: на неподтверждённый email вход не пускаем
+    EXPECT_FALSE(parseGoogleProfile(json(R"({"sub": "1", "email": "a@b.co",
+        "email_verified": false})"))
+                     ->emailVerified);
+    EXPECT_FALSE(parseGoogleProfile(json(R"({"sub": "1", "email": "a@b.co"})"))->emailVerified);
+}
+
+TEST(ParseGoogleProfileTest, RejectsResponseWithoutSub)
+{
+    EXPECT_EQ(parseGoogleProfile(json(R"({"error": "invalid_token"})")), std::nullopt);
+}
+
 TEST(SuggestUsernameTest, TransliteratesCyrillic)
 {
     EXPECT_EQ(suggestUsername("Владимир Шарапов", ""), "vladimir_sharapov");
