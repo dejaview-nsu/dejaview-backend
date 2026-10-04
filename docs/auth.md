@@ -47,6 +47,8 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 
 ## Сессия для локальной проверки
 
+Готовые запросы - коллекция Bruno в `bruno/` (папка `auth` прогоняет весь путь сама). Вручную:
+
 1. Запустить backend и почту для разработки: `docker compose up -d mailpit`.
 2. Зарегистрироваться:
 

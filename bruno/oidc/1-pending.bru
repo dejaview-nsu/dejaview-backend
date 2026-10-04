@@ -1,0 +1,23 @@
+meta {
+  name: Данные незавершённого входа
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/auth/oidc/pending
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: dv_oidc={{oidcCookie}}
+}
+
+docs {
+  Вход у провайдера идёт в браузере, поэтому запрос запускается вручную:
+  1. Открыть в браузере `{{baseUrl}}/api/v1/auth/oidc/yandex/start` и войти.
+  2. После возврата с `result=registration_required` или `link_required` взять cookie `dv_oidc`:
+     DevTools → Application → Cookies.
+  3. Положить её значение в переменную `oidcCookie` (вкладка Vars коллекции) и отправить запрос.
+}

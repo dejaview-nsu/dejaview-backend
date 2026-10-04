@@ -18,9 +18,24 @@
         "vscode": {
             "extensions": [
                 "llvm-vs-code-extensions.vscode-clangd",
-                "ms-vscode.cpptools"
+                "ms-vscode.cpptools",
+                "bruno-api-client.bruno",
+                "mtxr.sqltools",
+                "mtxr.sqltools-driver-pg"
             ],
             "settings": {
+                // БД из dejaview-infra; пароль - локальный по умолчанию из её .env.example
+                "sqltools.connections": [
+                    {
+                        "name": "dejaview (локальная)",
+                        "driver": "PostgreSQL",
+                        "server": "host.docker.internal",
+                        "port": 57432,
+                        "database": "dejaview",
+                        "username": "dejaview",
+                        "password": "dejaview_local_only"
+                    }
+                ],
                 // C/C++ от Microsoft нужен только для отладчика, подсказки даёт clangd
                 "C_Cpp.intelliSenseEngine": "disabled",
                 "[cpp]": {
