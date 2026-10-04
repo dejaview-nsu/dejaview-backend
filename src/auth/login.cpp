@@ -67,7 +67,7 @@ constexpr const char *kLockSecondsSql =
     "greatest(ceil(extract(epoch FROM locked_until - now())), 0)::int AS lock_seconds";
 }  // namespace
 
-Task<HttpResponsePtr> loginHandler(orm::DbClientPtr db, std::string captchaKey, HttpRequestPtr req)
+Task<HttpResponsePtr> loginHandler(orm::DbClientPtr db, CaptchaSettings captcha, HttpRequestPtr req)
 {
     const Json::Value *json = jsonBody(req);
     if (!json)
@@ -86,7 +86,7 @@ Task<HttpResponsePtr> loginHandler(orm::DbClientPtr db, std::string captchaKey, 
         co_return loginError(k400BadRequest, "AUTH_VALIDATION_ERROR", "Введите пароль", "password",
                              false);
     }
-    const bool captchaEnabled = !captchaKey.empty();
+    const bool captchaEnabled = !captcha.serverKey.empty();
 
     // Учётная запись и её защита от подбора. Конец блокировки обнуляет счётчик (#17149 п. 2.5),
     // поэтому истёкшая блокировка читается как 0 неудачных попыток.
@@ -129,7 +129,7 @@ Task<HttpResponsePtr> loginHandler(orm::DbClientPtr db, std::string captchaKey, 
         {
             co_return captchaRequiredError();
         }
-        if (!co_await verifyCaptcha(captchaKey, captchaToken, clientIp(req)))
+        if (!co_await verifyCaptcha(captcha, captchaToken, clientIp(req)))
         {
             co_await logFailure(db, userId, req, "captcha_invalid");
             co_return loginError(k403Forbidden, "AUTH_CAPTCHA_INVALID",

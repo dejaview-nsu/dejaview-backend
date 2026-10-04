@@ -24,6 +24,9 @@ struct OidcSettings
     OidcClient yandex;
     OidcClient google;
     OidcClient vk;
+    // Только для тестов: обмен кода и запрос профиля уходят на этот фейковый сервер вместо
+    // настоящих адресов провайдера (tests/integration/db_test.hpp). Пусто - настоящие
+    std::string fakeProviderUrl;
 };
 
 // Подключённые провайдеры для лога при запуске: «Яндекс, Google». Пусто - ни одного.

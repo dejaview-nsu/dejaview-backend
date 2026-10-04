@@ -4,14 +4,14 @@
 
 using namespace drogon;
 
-Task<bool> verifyCaptcha(std::string serverKey, std::string token, std::string ip)
+Task<bool> verifyCaptcha(CaptchaSettings settings, std::string token, std::string ip)
 {
     // Новый клиент и TLS-рукопожатие на каждую проверку; CAPTCHA нужна только после
     // 3 неудачных попыток, это редко. Если станет часто - один клиент на всё приложение
-    auto client = HttpClient::newHttpClient("https://smartcaptcha.yandexcloud.net");
+    auto client = HttpClient::newHttpClient(settings.url);
     auto request = HttpRequest::newHttpFormPostRequest();
     request->setPath("/validate");
-    request->setParameter("secret", serverKey);
+    request->setParameter("secret", settings.serverKey);
     request->setParameter("token", token);
     request->setParameter("ip", ip);
 

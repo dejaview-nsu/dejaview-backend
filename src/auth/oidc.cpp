@@ -119,6 +119,10 @@ struct CodeExchange
     std::string redirectUri;   // тот же, что ушёл провайдеру на старте
     std::string state;         // ?state= на callback
     std::string deviceId;      // ?device_id= на callback, только у VK ID
+    std::string fakeUrl;       // OidcSettings::fakeProviderUrl
+
+    // Куда отправить запрос: настоящий адрес провайдера или, в тестах, фейковый сервер
+    std::string host(std::string real) const { return fakeUrl.empty() ? real : fakeUrl; }
 };
 
 // Профиль пользователя: запрос с токеном (провайдер решает, в заголовке или в теле). nullopt -
@@ -146,8 +150,8 @@ Task<std::optional<OidcProfile>> fetchYandexProfile(CodeExchange exchange)
     tokenRequest->setParameter("client_id", exchange.client.clientId);
     tokenRequest->setParameter("client_secret", exchange.client.clientSecret);
     tokenRequest->setParameter("code_verifier", exchange.codeVerifier);
-    const std::string token =
-        co_await requestAccessToken("https://oauth.yandex.ru", tokenRequest, "yandex");
+    const std::string token = co_await requestAccessToken(exchange.host("https://oauth.yandex.ru"),
+                                                          tokenRequest, "yandex");
     if (token.empty())
     {
         co_return std::nullopt;
@@ -157,7 +161,8 @@ Task<std::optional<OidcProfile>> fetchYandexProfile(CodeExchange exchange)
     infoRequest->setPath("/info");
     infoRequest->setParameter("format", "json");
     infoRequest->addHeader("Authorization", "OAuth " + token);
-    const auto info = co_await requestProfile("https://login.yandex.ru", infoRequest, "yandex");
+    const auto info =
+        co_await requestProfile(exchange.host("https://login.yandex.ru"), infoRequest, "yandex");
     co_return info ? parseYandexProfile(*info) : std::nullopt;
 }
 
@@ -173,8 +178,8 @@ Task<std::optional<OidcProfile>> fetchGoogleProfile(CodeExchange exchange)
     tokenRequest->setParameter("client_secret", exchange.client.clientSecret);
     tokenRequest->setParameter("code_verifier", exchange.codeVerifier);
     tokenRequest->setParameter("redirect_uri", exchange.redirectUri);
-    const std::string token =
-        co_await requestAccessToken("https://oauth2.googleapis.com", tokenRequest, "google");
+    const std::string token = co_await requestAccessToken(
+        exchange.host("https://oauth2.googleapis.com"), tokenRequest, "google");
     if (token.empty())
     {
         co_return std::nullopt;
@@ -183,8 +188,8 @@ Task<std::optional<OidcProfile>> fetchGoogleProfile(CodeExchange exchange)
     auto infoRequest = HttpRequest::newHttpRequest();
     infoRequest->setPath("/v1/userinfo");
     infoRequest->addHeader("Authorization", "Bearer " + token);
-    const auto info =
-        co_await requestProfile("https://openidconnect.googleapis.com", infoRequest, "google");
+    const auto info = co_await requestProfile(exchange.host("https://openidconnect.googleapis.com"),
+                                              infoRequest, "google");
     co_return info ? parseGoogleProfile(*info) : std::nullopt;
 }
 
@@ -201,7 +206,8 @@ Task<std::optional<OidcProfile>> fetchVkProfile(CodeExchange exchange)
     tokenRequest->setParameter("redirect_uri", exchange.redirectUri);
     tokenRequest->setParameter("device_id", exchange.deviceId);
     tokenRequest->setParameter("state", exchange.state);
-    const std::string token = co_await requestAccessToken("https://id.vk.com", tokenRequest, "vk");
+    const std::string token =
+        co_await requestAccessToken(exchange.host("https://id.vk.com"), tokenRequest, "vk");
     if (token.empty())
     {
         co_return std::nullopt;
@@ -211,7 +217,8 @@ Task<std::optional<OidcProfile>> fetchVkProfile(CodeExchange exchange)
     infoRequest->setPath("/oauth2/user_info");
     infoRequest->setParameter("client_id", exchange.client.clientId);
     infoRequest->setParameter("access_token", token);
-    const auto info = co_await requestProfile("https://id.vk.com", infoRequest, "vk");
+    const auto info =
+        co_await requestProfile(exchange.host("https://id.vk.com"), infoRequest, "vk");
     co_return info ? parseVkProfile(*info) : std::nullopt;
 }
 
@@ -329,7 +336,8 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
                          .codeVerifier = pending[0]["code_verifier"].as<std::string>(),
                          .redirectUri = redirectUri(settings, provider),
                          .state = req->getParameter("state"),
-                         .deviceId = req->getParameter("device_id")});
+                         .deviceId = req->getParameter("device_id"),
+                         .fakeUrl = settings.fakeProviderUrl});
     }
     catch (const std::exception &e)
     {

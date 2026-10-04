@@ -4,8 +4,8 @@
 
 using namespace drogon;
 
-// Обмен кода и профиль у провайдера требуют настоящий Яндекс/Google/VK - здесь всё остальное:
-// начало входа, отказы на callback, незавершённая регистрация, привязка при входе с паролем.
+// Вход через провайдера целиком: начало, callback, обмен кода и профиль (провайдер - фейковый
+// сервер), исходы входа, незавершённая регистрация, привязка при входе с паролем.
 class OidcTest : public DbTest
 {
   protected:
@@ -14,6 +14,27 @@ class OidcTest : public DbTest
                           .yandex = {.clientId = "yandex-id", .clientSecret = "secret"},
                           .google = {},
                           .vk = {}};
+
+    void SetUp() override
+    {
+        DbTest::SetUp();
+        settings.fakeProviderUrl = fakeUrl;
+    }
+
+    // Вход целиком: начало, затем возврат от провайдера с кодом и верным state. Ответы
+    // провайдера тест задаёт заранее (fakeReply)
+    HttpResponsePtr signIn(const std::string &provider)
+    {
+        const auto start = run(oidcStartHandler(db, settings, request(Get, "/start"), provider));
+        const std::string location = start->getHeader("Location");
+        const auto from = location.find("&state=") + 7;
+        auto req = request(Get, "/callback", Json::Value(),
+                           {{"dv_oidc", start->getCookie("dv_oidc").value()}});
+        req->setParameter("code", "code-1");
+        req->setParameter("state", location.substr(from, location.find('&', from) - from));
+        req->setParameter("device_id", "device-1");
+        return run(oidcCallbackHandler(db, settings, req, provider));
+    }
 
     // Незавершённый вход после callback, как его оставляет oidcCallbackHandler. linkUserId -
     // исход link_required. Возвращает значение cookie dv_oidc
@@ -178,7 +199,7 @@ TEST_F(OidcTest, PasswordLoginLinksProviderToSameAccountOnly)
         json["login"] = name;
         json["password"] = kPassword;
         return run(
-            loginHandler(db, "", request(Post, "/api/v1/auth/login", json, {{"dv_oidc", cookie}})));
+            loginHandler(db, {}, request(Post, "/api/v1/auth/login", json, {{"dv_oidc", cookie}})));
     };
 
     // вход в другую учётную запись привязку отменяет
@@ -248,4 +269,72 @@ TEST_F(OidcTest, UnverifiedOrMissingEmailIsRejected)
     EXPECT_EQ(result(finish("ivan@example.com", false)), "error");
     EXPECT_EQ(result(finish("")), "error");
     EXPECT_EQ(scalar("SELECT count(*) FROM sessions"), "0");
+}
+
+TEST_F(OidcTest, YandexExchangesCodeAndReadsProfile)
+{
+    fakeReply("/token", k200OK, R"({"access_token": "yandex-token"})");
+    fakeReply("/info", k200OK,
+              R"({"id": "y-1", "display_name": "Иван", "default_email": "ivan@yandex.ru"})");
+    EXPECT_EQ(result(signIn("yandex")), "registration_required");
+    EXPECT_EQ(scalar("SELECT subject || ' ' || email FROM oidc_pending"), "y-1 ivan@yandex.ru");
+
+    const auto token = fakeReceived("/token");
+    ASSERT_TRUE(token);
+    EXPECT_EQ(token->getParameter("grant_type"), "authorization_code");
+    EXPECT_EQ(token->getParameter("code"), "code-1");
+    EXPECT_EQ(token->getParameter("client_id"), "yandex-id");
+    EXPECT_EQ(token->getParameter("client_secret"), "secret");
+    // PKCE: провайдер сверит verifier с хешем, полученным на старте
+    EXPECT_EQ(token->getParameter("code_verifier"),
+              scalar("SELECT code_verifier FROM oidc_pending"));
+    EXPECT_EQ(fakeReceived("/info")->getHeader("Authorization"), "OAuth yandex-token");
+}
+
+TEST_F(OidcTest, GoogleSendsRedirectUriAndBearerToken)
+{
+    settings.google = {.clientId = "google-id", .clientSecret = "google-secret"};
+    fakeReply("/token", k200OK, R"({"access_token": "google-token"})");
+    fakeReply(
+        "/v1/userinfo", k200OK,
+        R"({"sub": "g-1", "email": "ivan@gmail.com", "email_verified": true, "name": "Ivan"})");
+    EXPECT_EQ(result(signIn("google")), "registration_required");
+    // тот же redirect_uri, что ушёл на старте: иначе Google код не обменяет
+    EXPECT_EQ(fakeReceived("/token")->getParameter("redirect_uri"),
+              "https://dejaview.ru/api/v1/auth/oidc/google/callback");
+    EXPECT_EQ(fakeReceived("/v1/userinfo")->getHeader("Authorization"), "Bearer google-token");
+}
+
+TEST_F(OidcTest, VkSendsDeviceIdAndStateWithoutSecret)
+{
+    settings.vk = {.clientId = "vk-id"};
+    fakeReply("/oauth2/auth", k200OK, R"({"access_token": "vk-token"})");
+    fakeReply("/oauth2/user_info", k200OK,
+              R"({"user": {"user_id": 777, "first_name": "Иван", "email": "ivan@vk.com"}})");
+    EXPECT_EQ(result(signIn("vk")), "registration_required");
+
+    const auto token = fakeReceived("/oauth2/auth");
+    ASSERT_TRUE(token);
+    EXPECT_EQ(token->getParameter("device_id"), "device-1");
+    EXPECT_EQ(token->getParameter("state"), scalar("SELECT state FROM oidc_pending"));
+    EXPECT_EQ(token->getParameter("client_secret"), "");  // VK ID - без секрета, только PKCE
+    EXPECT_EQ(fakeReceived("/oauth2/user_info")->getParameter("access_token"), "vk-token");
+}
+
+TEST_F(OidcTest, ProviderFailureEndsWithError)
+{
+    // код не обменялся: истёк или уже использован
+    fakeReply("/token", k400BadRequest, R"({"error": "invalid_grant"})");
+    const auto badCode = signIn("yandex");
+    EXPECT_EQ(result(badCode), "error");
+    EXPECT_EQ(badCode->getCookie("dv_oidc").maxAge(), 0);
+
+    // токен выдан, профиль - нет
+    fakeReply("/token", k200OK, R"({"access_token": "yandex-token"})");
+    fakeReply("/info", k401Unauthorized, "{}");
+    EXPECT_EQ(result(signIn("yandex")), "error");
+
+    settings.fakeProviderUrl = "http://127.0.0.1:1";  // провайдер недоступен
+    EXPECT_EQ(result(signIn("yandex")), "error");
+    EXPECT_EQ(scalar("SELECT count(*) FROM oidc_pending WHERE subject IS NOT NULL"), "0");
 }

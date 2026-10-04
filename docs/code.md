@@ -49,5 +49,7 @@ db/migrations/          миграции dbmate
   ```
   Отчёт по строкам - `build-coverage/coverage/index.html`. В обычной сборке (GCC) цели `coverage`
   нет смысла: она подскажет команды выше и завершится ошибкой.
-- Не покрыты намеренно - вызовы внешних сервисов: обмен кода у OIDC-провайдеров, проверка токена
-  SmartCaptcha. Их проверяют вручную ([oidc.md](oidc.md)).
+- **Внешние сервисы** (SmartCaptcha, OIDC-провайдеры) в тестах заменяет фейковый HTTP-сервер в том
+  же процессе: `DbTest::fakeReply` задаёт ответ на путь, `fakeReceived` - что прислал backend. Его
+  адрес попадает в код через `CaptchaSettings::url` и `OidcSettings::fakeProviderUrl`. С настоящими
+  сервисами вход проверяют вручную ([oidc.md](oidc.md)).

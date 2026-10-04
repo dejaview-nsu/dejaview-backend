@@ -7,15 +7,27 @@ using namespace drogon;
 class LoginTest : public DbTest
 {
   protected:
+    CaptchaSettings captcha;  // без ключа - CAPTCHA выключена
+
     HttpResponsePtr login(const std::string &login, const std::string &password,
-                          const std::string &captchaKey = "",
+                          const std::string &captchaToken = "",
                           const std::map<std::string, std::string> &cookies = {})
     {
         Json::Value json;
         json["login"] = login;
         json["password"] = password;
-        return run(
-            loginHandler(db, captchaKey, request(Post, "/api/v1/auth/login", json, cookies)));
+        if (!captchaToken.empty())
+        {
+            json["captcha_token"] = captchaToken;
+        }
+        return run(loginHandler(db, captcha, request(Post, "/api/v1/auth/login", json, cookies)));
+    }
+
+    // После 3 неудачных попыток: следующий вход - только с CAPTCHA. SmartCaptcha - фейковая
+    void requireCaptcha()
+    {
+        db->execSqlSync("UPDATE users SET failed_login_count = 3");
+        captcha = {.serverKey = "server-key", .url = fakeUrl};
     }
 };
 
@@ -58,7 +70,7 @@ TEST_F(LoginTest, ValidatesFields)
 {
     EXPECT_EQ(body(login("", kPassword))["field"].asString(), "login");
     EXPECT_EQ(body(login("ivan", ""))["field"].asString(), "password");
-    const auto malformed = run(loginHandler(db, "", request(Post, "/api/v1/auth/login")));
+    const auto malformed = run(loginHandler(db, captcha, request(Post, "/api/v1/auth/login")));
     EXPECT_EQ(malformed->statusCode(), k400BadRequest);
     EXPECT_FALSE(body(malformed)["captcha_required"].asBool());
 }
@@ -66,17 +78,53 @@ TEST_F(LoginTest, ValidatesFields)
 TEST_F(LoginTest, CaptchaFromThirdFailureAndLockAfterFifth)
 {
     createUser("ivan", "ivan@example.com");
-    const std::string key = "server-key";  // CAPTCHA включена, до проверки токена дело не дойдёт
+    captcha.serverKey = "server-key";  // CAPTCHA включена, до проверки токена дело не дойдёт
 
-    EXPECT_FALSE(body(login("ivan", "wrong", key))["captcha_required"].asBool());
-    EXPECT_FALSE(body(login("ivan", "wrong", key))["captcha_required"].asBool());
-    EXPECT_TRUE(body(login("ivan", "wrong", key))["captcha_required"].asBool());
+    EXPECT_FALSE(body(login("ivan", "wrong"))["captcha_required"].asBool());
+    EXPECT_FALSE(body(login("ivan", "wrong"))["captcha_required"].asBool());
+    EXPECT_TRUE(body(login("ivan", "wrong"))["captcha_required"].asBool());
 
     // 4-я попытка без токена CAPTCHA - 403, неудачной не считается
-    const auto noCaptcha = login("ivan", kPassword, key);
+    const auto noCaptcha = login("ivan", kPassword);
     EXPECT_EQ(noCaptcha->statusCode(), k403Forbidden);
     EXPECT_EQ(body(noCaptcha)["code"].asString(), "AUTH_CAPTCHA_REQUIRED");
     EXPECT_EQ(scalar("SELECT failed_login_count FROM users"), "3");
+}
+
+TEST_F(LoginTest, CaptchaTokenIsCheckedBySmartCaptcha)
+{
+    createUser("ivan", "ivan@example.com");
+    requireCaptcha();
+
+    fakeReply("/validate", k200OK, R"({"status": "failed", "message": "Token invalid"})");
+    const auto rejected = login("ivan", kPassword, "captcha-token");
+    EXPECT_EQ(rejected->statusCode(), k403Forbidden);
+    EXPECT_EQ(body(rejected)["code"].asString(), "AUTH_CAPTCHA_INVALID");
+    EXPECT_EQ(scalar("SELECT failed_login_count FROM users"), "3");  // неудачей не считается
+    EXPECT_EQ(scalar("SELECT details->>'reason' FROM security_events"), "captcha_invalid");
+    const auto check = fakeReceived("/validate");
+    ASSERT_TRUE(check);
+    EXPECT_EQ(check->getParameter("secret"), "server-key");
+    EXPECT_EQ(check->getParameter("token"), "captcha-token");
+
+    fakeReply("/validate", k200OK, R"({"status": "ok"})");
+    EXPECT_EQ(login("ivan", kPassword, "captcha-token")->statusCode(), k200OK);
+}
+
+TEST_F(LoginTest, SmartCaptchaFailureDoesNotBlockLogin)
+{
+    // Сбой у Яндекса или неверный серверный ключ вход не закрывают: от подбора защищает
+    // блокировка после 5-й неудачи
+    createUser("ivan", "ivan@example.com");
+    for (const auto status : {k500InternalServerError, k403Forbidden})
+    {
+        requireCaptcha();
+        fakeReply("/validate", status, "{}");
+        EXPECT_EQ(login("ivan", kPassword, "captcha-token")->statusCode(), k200OK) << status;
+    }
+    requireCaptcha();
+    captcha.url = "http://127.0.0.1:1";  // сервис недоступен: на этом порту никто не слушает
+    EXPECT_EQ(login("ivan", kPassword, "captcha-token")->statusCode(), k200OK);
 }
 
 TEST_F(LoginTest, FifthFailureLocksForFifteenMinutes)

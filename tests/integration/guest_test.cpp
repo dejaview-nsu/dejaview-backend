@@ -35,7 +35,7 @@ class GuestTest : public DbTest
         json["login"] = "ivan";
         json["password"] = kPassword;
         const auto req = request(Post, "/api/v1/auth/login", json, cookies);
-        return handle(req, loginHandler(db, "", req));
+        return handle(req, loginHandler(db, {}, req));
     }
 };
 

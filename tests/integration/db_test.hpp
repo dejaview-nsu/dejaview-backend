@@ -42,6 +42,14 @@ class DbTest : public ::testing::Test
                             const std::string &status = "active");
 
     static constexpr const char *kPassword = "Kino#2026";
+
+    // Фейковый внешний сервис вместо SmartCaptcha и OIDC-провайдеров: HTTP-сервер на 127.0.0.1 в
+    // этом же процессе, адрес - fakeUrl. На путь отвечает тем, что задал fakeReply (не задано -
+    // 404), и запоминает последний пришедший запрос: тест проверяет, что отправил backend
+    std::string fakeUrl;
+    static void fakeReply(const std::string &path, drogon::HttpStatusCode status,
+                          const std::string &json);
+    static drogon::HttpRequestPtr fakeReceived(const std::string &path);  // nullptr - не было
 };
 
 // Тело ответа как JSON (пустой объект, если тела нет)

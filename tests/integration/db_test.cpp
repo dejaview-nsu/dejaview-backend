@@ -2,15 +2,19 @@
 
 #include "auth/crypto.hpp"
 
+#include <drogon/drogon.h>
 #include <libpq-fe.h>
 
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 using namespace drogon;
@@ -82,6 +86,61 @@ orm::DbClientPtr testDb()
     }();
     return db;
 }
+
+// Ответы фейкового сервиса, заданные тестом, и пришедшие запросы. Сервер работает в своём
+// потоке, тест - в своём: отсюда мьютекс
+std::mutex fakeMutex;
+std::map<std::string, std::pair<HttpStatusCode, std::string>> fakeReplies;
+std::map<std::string, HttpRequestPtr> fakeRequests;
+std::thread fakeThread;
+
+// Фейковый сервис - приложение Drogon в отдельном потоке, порт выбирает система. Запускается при
+// первом вызове. Нужен и самим запросам: HttpClient работает в цикле событий приложения, без
+// запуска обращение к внешнему сервису не завершилось бы никогда
+const std::string &fakeServer()
+{
+    static const std::string url = []
+    {
+        std::promise<std::uint16_t> port;
+        app()
+            .addListener("127.0.0.1", 0)
+            .registerBeginningAdvice([&port] { port.set_value(app().getListeners()[0].toPort()); })
+            // advice до маршрутизации видит любой путь: обработчики регистрировать не нужно
+            .registerPreRoutingAdvice(
+                [](const HttpRequestPtr &req, AdviceCallback &&respond, AdviceChainCallback &&)
+                {
+                    const std::lock_guard lock(fakeMutex);
+                    fakeRequests[req->path()] = req;
+                    const auto reply = fakeReplies.find(req->path());
+                    if (reply == fakeReplies.end())
+                    {
+                        respond(HttpResponse::newHttpResponse(k404NotFound, CT_APPLICATION_JSON));
+                        return;
+                    }
+                    auto response =
+                        HttpResponse::newHttpResponse(reply->second.first, CT_APPLICATION_JSON);
+                    response->setBody(reply->second.second);
+                    respond(response);
+                });
+        fakeThread = std::thread([] { app().run(); });
+        return "http://127.0.0.1:" + std::to_string(port.get_future().get());
+    }();
+    return url;
+}
+
+// После всех тестов сервер останавливается: иначе процесс завершался бы при работающем потоке
+class StopFakeServer : public testing::Environment
+{
+    void TearDown() override
+    {
+        if (fakeThread.joinable())
+        {
+            app().quit();
+            fakeThread.join();
+        }
+    }
+};
+const auto *const kStopFakeServer = testing::AddGlobalTestEnvironment(new StopFakeServer);
 }  // namespace
 
 void DbTest::SetUp()
@@ -94,6 +153,24 @@ void DbTest::SetUp()
     // Каскад очищает и всё, что ссылается на эти таблицы: сессии, ссылки, письма, привязки
     db->execSqlSync(
         "TRUNCATE users, oidc_pending, security_events, movies RESTART IDENTITY CASCADE");
+
+    fakeUrl = fakeServer();
+    const std::lock_guard lock(fakeMutex);
+    fakeReplies.clear();
+    fakeRequests.clear();
+}
+
+void DbTest::fakeReply(const std::string &path, HttpStatusCode status, const std::string &json)
+{
+    const std::lock_guard lock(fakeMutex);
+    fakeReplies[path] = {status, json};
+}
+
+HttpRequestPtr DbTest::fakeReceived(const std::string &path)
+{
+    const std::lock_guard lock(fakeMutex);
+    const auto request = fakeRequests.find(path);
+    return request == fakeRequests.end() ? nullptr : request->second;
 }
 
 HttpRequestPtr DbTest::request(HttpMethod method, const std::string &path, const Json::Value &body,

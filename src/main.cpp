@@ -103,8 +103,9 @@ int main()
         .registerHandler("/api/v1/auth/confirm-email",
                          [db](HttpRequestPtr req) { return confirmEmailHandler(db, req); }, {Post})
         .registerHandler("/api/v1/auth/login",
-                         [db, captchaKey = config.smartCaptchaServerKey](HttpRequestPtr req)
-                         { return loginHandler(db, captchaKey, req); }, {Post})
+                         [db, captcha = CaptchaSettings{.serverKey = config.smartCaptchaServerKey}](
+                             HttpRequestPtr req) { return loginHandler(db, captcha, req); },
+                         {Post})
         .registerHandler("/api/v1/auth/resend-confirmation",
                          [db, appUrl = config.appUrl](HttpRequestPtr req)
                          { return resendConfirmationHandler(db, appUrl, req); }, {Post})
