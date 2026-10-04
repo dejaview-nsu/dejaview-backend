@@ -83,8 +83,7 @@ Cookie clearSessionCookie()
     return cookie;
 }
 
-Task<HttpResponsePtr> startSession(orm::DbClientPtr db, HttpRequestPtr req, std::int64_t userId,
-                                   HttpStatusCode status)
+Task<NewSession> createSession(orm::DbClientPtr db, HttpRequestPtr req, std::int64_t userId)
 {
     // Идентификатор каждый раз новый, прежняя сессия из cookie удаляется (тег Auth)
     if (const std::string &oldToken = req->getCookie("dv_session"); !oldToken.empty())
@@ -105,9 +104,16 @@ Task<HttpResponsePtr> startSession(orm::DbClientPtr db, HttpRequestPtr req, std:
             kExpiresAtSql + " FROM s JOIN users u USING (user_id)",
         tokenHash(token), userId);
 
-    auto response = HttpResponse::newHttpJsonResponse(sessionInfo(toSessionUser(result[0])));
+    co_return NewSession{.token = token, .user = toSessionUser(result[0])};
+}
+
+Task<HttpResponsePtr> startSession(orm::DbClientPtr db, HttpRequestPtr req, std::int64_t userId,
+                                   HttpStatusCode status)
+{
+    const NewSession session = co_await createSession(db, req, userId);
+    auto response = HttpResponse::newHttpJsonResponse(sessionInfo(session.user));
     response->setStatusCode(status);
-    response->addCookie(sessionCookie(token));
+    response->addCookie(sessionCookie(session.token));
     co_return response;
 }
 

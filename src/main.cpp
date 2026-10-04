@@ -1,4 +1,5 @@
 #include "auth/login.hpp"
+#include "auth/oidc.hpp"
 #include "auth/registration.hpp"
 #include "auth/session.hpp"
 #include "background.hpp"
@@ -39,6 +40,14 @@ int main()
                     "Допустимо только локально";
     }
 
+    const OidcSettings oidc{
+        .appUrl = config.appUrl, .apiUrl = config.apiUrl, .yandex = config.yandex};
+    if (!config.yandex.clientId.empty())
+    {
+        LOG_INFO << "OIDC: вход через Яндекс подключён, redirect_uri " << config.apiUrl
+                 << "/api/v1/auth/oidc/yandex/callback";
+    }
+
     // Письма из очереди и очистка устаревшего
     const auto backgroundJobs = startBackgroundJobs(db, config.smtp);
 
@@ -68,5 +77,15 @@ int main()
         .registerHandler("/api/v1/auth/resend-confirmation",
                          [db, appUrl = config.appUrl](HttpRequestPtr req)
                          { return resendConfirmationHandler(db, appUrl, req); }, {Post})
+        .registerHandler("/api/v1/auth/oidc/{provider}/start",
+                         [db, oidc](HttpRequestPtr req, std::string provider)
+                         { return oidcStartHandler(db, oidc, req, provider); }, {Get})
+        .registerHandler("/api/v1/auth/oidc/{provider}/callback",
+                         [db, oidc](HttpRequestPtr req, std::string provider)
+                         { return oidcCallbackHandler(db, oidc, req, provider); }, {Get})
+        .registerHandler("/api/v1/auth/oidc/pending",
+                         [db](HttpRequestPtr req) { return oidcPendingHandler(db, req); }, {Get})
+        .registerHandler("/api/v1/auth/oidc/complete",
+                         [db](HttpRequestPtr req) { return oidcCompleteHandler(db, req); }, {Post})
         .run();
 }

@@ -33,6 +33,8 @@ add_library(dejaview-core STATIC
     src/auth/http_common.cpp
     src/auth/login.cpp
     src/auth/login_rules.cpp
+    src/auth/oidc.cpp
+    src/auth/oidc_profile.cpp
     src/auth/registration.cpp
     src/auth/security_log.cpp
     src/auth/session.cpp
@@ -50,6 +52,7 @@ add_executable(dejaview-tests
     tests/config_test.cpp
     tests/auth/crypto_test.cpp
     tests/auth/login_rules_test.cpp
+    tests/auth/oidc_profile_test.cpp
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp)

@@ -60,6 +60,8 @@ docker compose up --build
 | `SMTP_URL` | да | - | почтовый сервер: `smtps://smtp.example.ru:465` (TLS), локально `smtp://host.docker.internal:1025` (Mailpit) |
 | `SMTP_FROM` | да | - | адрес отправителя писем: `noreply@dejaview.ru` |
 | `SMTP_USER`, `SMTP_PASSWORD` | нет | - | учётные данные SMTP; не заданы - без авторизации |
+| `API_URL` | нет | `APP_URL` | публичный адрес backend для redirect_uri OIDC: `{API_URL}/api/v1/auth/oidc/<провайдер>/callback` |
+| `OIDC_YANDEX_CLIENT_ID`, `OIDC_YANDEX_CLIENT_SECRET` | нет | - | приложение на oauth.yandex.ru; не заданы - вход через Яндекс выключен |
 
 При некорректном значении сервер не стартует: пишет причину в лог (без пароля), код выхода 1.
 

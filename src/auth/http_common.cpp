@@ -2,6 +2,8 @@
 
 #include "error_response.hpp"
 
+#include <chrono>
+
 using namespace drogon;
 
 const Json::Value *jsonBody(const HttpRequestPtr &req)
@@ -14,6 +16,18 @@ std::string stringField(const Json::Value &body, const char *name)
 {
     const Json::Value &value = body[name];
     return value.isString() ? value.asString() : "";
+}
+
+int birthYearField(const Json::Value &body)
+{
+    const Json::Value &value = body["birth_year"];
+    return value.isInt() ? value.asInt() : 0;
+}
+
+int currentYear()
+{
+    using namespace std::chrono;
+    return static_cast<int>(year_month_day{floor<days>(system_clock::now())}.year());
 }
 
 HttpResponsePtr malformedBody()

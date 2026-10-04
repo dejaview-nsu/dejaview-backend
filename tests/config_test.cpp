@@ -21,6 +21,10 @@ class LoadConfigTest : public ::testing::Test
         setenv("SMTP_FROM", "noreply@dejaview.ru", 1);
         unsetenv("SMTP_USER");
         unsetenv("SMTP_PASSWORD");
+        for (const char *name : {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET"})
+        {
+            unsetenv(name);
+        }
     }
 
     void TearDown() override
@@ -147,4 +151,27 @@ TEST_F(LoadConfigTest, RejectsInvalidSmtp)
         setenv("SMTP_FROM", from, 1);
         EXPECT_THROW(loadConfig(), std::runtime_error);
     }
+}
+
+TEST_F(LoadConfigTest, ApiUrlDefaultsToAppUrl)
+{
+    // в продакшене frontend и API на одном домене
+    EXPECT_EQ(loadConfig().apiUrl, "https://dejaview.ru");
+    setenv("API_URL", "http://localhost:8081/", 1);
+    EXPECT_EQ(loadConfig().apiUrl, "http://localhost:8081");
+    setenv("API_URL", "localhost:8081", 1);
+    EXPECT_THROW(loadConfig(), std::runtime_error);
+    unsetenv("API_URL");
+}
+
+TEST_F(LoadConfigTest, OidcProviderIsOptional)
+{
+    EXPECT_EQ(loadConfig().yandex.clientId, "");
+    setenv("OIDC_YANDEX_CLIENT_ID", "id", 1);
+    setenv("OIDC_YANDEX_CLIENT_SECRET", "secret", 1);
+    const Config config = loadConfig();
+    EXPECT_EQ(config.yandex.clientId, "id");
+    EXPECT_EQ(config.yandex.clientSecret, "secret");
+    unsetenv("OIDC_YANDEX_CLIENT_ID");
+    unsetenv("OIDC_YANDEX_CLIENT_SECRET");
 }

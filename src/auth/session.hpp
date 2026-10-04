@@ -22,9 +22,17 @@ struct SessionUser
     std::string expiresAt;  // ISO 8601 в UTC, как SessionInfo.expires_at
 };
 
-// Создаёт сессию и возвращает ответ SessionCreated: тело SessionInfo и cookie dv_session.
-// Сессия из cookie запроса, если была, удаляется. db может быть транзакцией: тогда сессия
-// появится вместе с остальными изменениями (например, подтверждением email).
+// Новая сессия: токен для cookie dv_session и пользователь. Сессия из cookie запроса, если была,
+// удаляется: идентификатор при каждом входе новый (тег Auth).
+struct NewSession
+{
+    std::string token;
+    SessionUser user;
+};
+drogon::Task<NewSession> createSession(drogon::orm::DbClientPtr db, drogon::HttpRequestPtr req,
+                                       std::int64_t userId);
+
+// createSession и ответ SessionCreated: тело SessionInfo и cookie dv_session.
 drogon::Task<drogon::HttpResponsePtr> startSession(drogon::orm::DbClientPtr db,
                                                    drogon::HttpRequestPtr req, std::int64_t userId,
                                                    drogon::HttpStatusCode status = drogon::k200OK);

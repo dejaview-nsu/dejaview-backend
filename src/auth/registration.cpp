@@ -42,12 +42,6 @@ HttpResponsePtr confirmationSent(int resendAfter, HttpStatusCode status)
     return response;
 }
 
-int currentYear()
-{
-    using namespace std::chrono;
-    return static_cast<int>(year_month_day{floor<days>(system_clock::now())}.year());
-}
-
 // payload письма в email_outbox: ссылка ведёт на страницу SPA, а не в API - почтовые сканеры
 // открывают ссылки из писем и израсходовали бы токен (описание POST /auth/confirm-email).
 std::string confirmationPayload(const std::string &appUrl, const std::string &token)
@@ -68,9 +62,7 @@ Task<HttpResponsePtr> registerHandler(orm::DbClientPtr db, std::string appUrl, H
     const std::string username = stringField(*json, "username");
     const std::string email = stringField(*json, "email");
     const std::string password = stringField(*json, "password");
-    // Не целое число - та же ошибка, что и год вне диапазона: 0 в диапазон не попадает
-    const Json::Value &birthYearValue = (*json)["birth_year"];
-    const int birthYear = birthYearValue.isInt() ? birthYearValue.asInt() : 0;
+    const int birthYear = birthYearField(*json);
 
     // Порядок проверок - порядок полей формы (#17148 п. 2.2 шаг 3): ответ - первая ошибка
     const auto error = validateUsername(username)

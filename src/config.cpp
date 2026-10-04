@@ -49,12 +49,13 @@ std::string readDatabaseUrl()
     return std::string(url);
 }
 
-std::string readAppUrl()
+// Адрес вида http(s)://host без '/' на конце. name - для текста ошибки.
+std::string readUrl(const char *name, std::string_view url)
 {
-    std::string_view url = env("APP_URL").value_or("");
     if (!url.starts_with("http://") && !url.starts_with("https://"))
     {
-        throw std::runtime_error("APP_URL: не задан или не начинается с http:// или https://");
+        throw std::runtime_error(
+            std::format("{}: не задан или не начинается с http:// или https://", name));
     }
     while (url.ends_with('/'))
     {
@@ -62,6 +63,9 @@ std::string readAppUrl()
     }
     return std::string(url);
 }
+
+std::string readAppUrl() { return readUrl("APP_URL", env("APP_URL").value_or("")); }
+
 SmtpConfig readSmtp()
 {
     const std::string_view url = env("SMTP_URL").value_or("");
@@ -93,5 +97,8 @@ Config loadConfig()
         .appUrl = readAppUrl(),
         .smartCaptchaServerKey = std::string(env("SMARTCAPTCHA_SERVER_KEY").value_or("")),
         .smtp = readSmtp(),
+        .apiUrl = readUrl("API_URL", env("API_URL").value_or(env("APP_URL").value_or(""))),
+        .yandex = {.clientId = std::string(env("OIDC_YANDEX_CLIENT_ID").value_or("")),
+                   .clientSecret = std::string(env("OIDC_YANDEX_CLIENT_SECRET").value_or(""))},
     };
 }

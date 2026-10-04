@@ -4,6 +4,7 @@
 #include "auth/crypto.hpp"
 #include "auth/http_common.hpp"
 #include "auth/login_rules.hpp"
+#include "auth/oidc.hpp"
 #include "auth/security_log.hpp"
 #include "auth/session.hpp"
 #include "auth/validation.hpp"
@@ -205,5 +206,8 @@ Task<HttpResponsePtr> loginHandler(orm::DbClientPtr db, std::string captchaKey, 
     Json::Value details;
     details["method"] = "password";
     co_await logSecurityEvent(db, "login_success", userId, req, details);
-    co_return co_await startSession(db, req, userId);
+    auto response = co_await startSession(db, req, userId);
+    // Вход после исхода OIDC link_required: привязать провайдера (#17148 п. 3.2 шаг 7)
+    co_await finishOidcLink(db, req, userId, response);
+    co_return response;
 }

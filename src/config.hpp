@@ -14,6 +14,13 @@ struct SmtpConfig
     std::string password;
 };
 
+// Приложение у OIDC-провайдера (#17148 п. 3). Пустой clientId - вход через провайдера выключен.
+struct OidcClient
+{
+    std::string clientId;
+    std::string clientSecret;
+};
+
 struct Config
 {
     std::uint16_t port;
@@ -26,6 +33,11 @@ struct Config
     // локальной разработки, в продакшене обязателен (#17094 п. 3.3)
     std::string smartCaptchaServerKey;
     SmtpConfig smtp;
+    // Публичный адрес backend: из него собирается redirect_uri для OIDC,
+    // {apiUrl}/api/v1/auth/oidc/{provider}/callback. По умолчанию - appUrl: в продакшене
+    // frontend и API на одном домене. Локально они на разных портах
+    std::string apiUrl;
+    OidcClient yandex;
 };
 
 // Читает настройки из переменных окружения. При некорректном значении бросает std::runtime_error.

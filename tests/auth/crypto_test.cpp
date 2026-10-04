@@ -35,3 +35,20 @@ TEST(CryptoTest, TokenHashIsSha256Hex)
     // известное значение SHA-256 строки "abc"
     EXPECT_EQ(tokenHash("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
+
+TEST(CryptoTest, PkceChallengeMatchesRfc7636)
+{
+    // пример из RFC 7636, приложение B
+    EXPECT_EQ(pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+              "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+}
+
+TEST(CryptoTest, RandomBelowStaysInRange)
+{
+    for (int i = 0; i < 1000; ++i)
+    {
+        const int value = randomBelow(10);
+        ASSERT_GE(value, 0);
+        ASSERT_LT(value, 10);
+    }
+}
