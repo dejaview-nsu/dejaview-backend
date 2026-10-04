@@ -44,6 +44,16 @@ drogon::Task<drogon::HttpResponsePtr> startSession(drogon::orm::DbClientPtr db,
 drogon::Task<std::expected<SessionUser, drogon::HttpResponsePtr>> requireSession(
     drogon::orm::DbClientPtr db, drogon::HttpRequestPtr req);
 
+// Сессия определяется один раз на запрос, для всех маршрутов: main.cpp регистрирует эти функции
+// как advices Drogon - до обработчика и после.
+// resolveSession: если в запросе cookie dv_session - найти сессию, итог положить в атрибуты
+// запроса. requireSession и GET /auth/session берут его оттуда, без второго запроса к БД.
+drogon::Task<> resolveSession(drogon::orm::DbClientPtr db, drogon::HttpRequestPtr req);
+// clearStaleSessionCookie: cookie недействительна, а ответ свою не выдал - стереть. Так операция
+// гостя с недействительной cookie выполняется как для гостя (тег Auth).
+void clearStaleSessionCookie(const drogon::HttpRequestPtr &req,
+                             const drogon::HttpResponsePtr &response);
+
 // GET /auth/session: SPA узнаёт, гость пользователь или нет (cookie HttpOnly, JS её не видит).
 drogon::Task<drogon::HttpResponsePtr> getSessionHandler(drogon::orm::DbClientPtr db,
                                                         drogon::HttpRequestPtr req);

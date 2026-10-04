@@ -34,33 +34,31 @@ Json::Value sessionInfo(const SessionUser &user)
     return body;
 }
 
+// Атрибуты запроса, которые заполняет resolveSession
+constexpr const char *kResolved = "dv.session.resolved";
+constexpr const char *kUser = "dv.session.user";
+
+bool hasValidSession(const HttpRequestPtr &req) { return req->attributes()->find(kUser); }
+
 // Сессия по cookie без побочных эффектов: пользователь или ответ 401, журнал не пишется.
 Task<std::expected<SessionUser, HttpResponsePtr>> checkSession(orm::DbClientPtr db,
                                                                HttpRequestPtr req)
 {
-    const std::string &token = req->getCookie("dv_session");
-    if (token.empty())
+    if (req->getCookie("dv_session").empty())
     {
         co_return std::unexpected(
             errorResponse(k401Unauthorized, "SESSION_REQUIRED", "Войдите, чтобы продолжить"));
     }
-
-    // Заблокированный пользователь теряет доступ сразу, не дожидаясь конца сессии
-    const auto result = co_await db->execSqlCoro(
-        std::string("SELECT u.user_id, u.username, u.password_hash IS NOT NULL AS has_password, ") +
-            kExpiresAtSql +
-            " FROM sessions s JOIN users u USING (user_id)"
-            " WHERE s.token_hash = decode($1, 'hex') AND s.expires_at > now()"
-            " AND u.status = 'active'",
-        tokenHash(token));
-    if (result.empty())
+    // В приложении сессию уже нашёл advice до обработчика; без него (тесты) - ищем сейчас
+    co_await resolveSession(db, req);
+    if (!hasValidSession(req))
     {
         auto response =
             errorResponse(k401Unauthorized, "SESSION_EXPIRED", "Сессия истекла. Войдите снова");
         response->addCookie(clearSessionCookie());
         co_return std::unexpected(response);
     }
-    co_return toSessionUser(result[0]);
+    co_return req->attributes()->get<SessionUser>(kUser);
 }
 }  // namespace
 
@@ -115,6 +113,38 @@ Task<HttpResponsePtr> startSession(orm::DbClientPtr db, HttpRequestPtr req, std:
     response->setStatusCode(status);
     response->addCookie(sessionCookie(session.token));
     co_return response;
+}
+
+Task<> resolveSession(orm::DbClientPtr db, HttpRequestPtr req)
+{
+    const std::string &token = req->getCookie("dv_session");
+    if (token.empty() || req->attributes()->find(kResolved))
+    {
+        co_return;
+    }
+    // Заблокированный пользователь теряет доступ сразу, не дожидаясь конца сессии
+    const auto result = co_await db->execSqlCoro(
+        std::string("SELECT u.user_id, u.username, u.password_hash IS NOT NULL AS has_password, ") +
+            kExpiresAtSql +
+            " FROM sessions s JOIN users u USING (user_id)"
+            " WHERE s.token_hash = decode($1, 'hex') AND s.expires_at > now()"
+            " AND u.status = 'active'",
+        tokenHash(token));
+    req->attributes()->insert(kResolved, true);
+    if (!result.empty())
+    {
+        req->attributes()->insert(kUser, toSessionUser(result[0]));
+    }
+}
+
+void clearStaleSessionCookie(const HttpRequestPtr &req, const HttpResponsePtr &response)
+{
+    // Сессию искали, cookie есть, но недействительна, а ответ свою cookie не выдал (вход выдаёт)
+    if (req->attributes()->find(kResolved) && !hasValidSession(req) &&
+        !response->getCookies().contains("dv_session"))
+    {
+        response->addCookie(clearSessionCookie());
+    }
 }
 
 Task<std::expected<SessionUser, HttpResponsePtr>> requireSession(orm::DbClientPtr db,

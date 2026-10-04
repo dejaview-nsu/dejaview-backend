@@ -68,6 +68,32 @@ int main()
         .setUploadPath("/tmp/dejaview-uploads")
         .setExceptionHandler(exceptionHandler)
         // 404, 405 и другие ошибки фреймворка - JSON Error вместо HTML-страницы с версией Drogon
+        // Сессия из cookie определяется один раз до обработчика (requireSession берёт её готовой),
+        // недействительная cookie стирается после - для всех маршрутов сразу
+        .registerPreHandlingAdvice(
+            [db](const HttpRequestPtr &req, AdviceCallback &&, AdviceChainCallback &&next)
+            {
+                if (req->getCookie("dv_session").empty())
+                {
+                    next();
+                    return;
+                }
+                async_run(
+                    [db, req, next = std::move(next)]() -> Task<>
+                    {
+                        try
+                        {
+                            co_await resolveSession(db, req);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            // БД недоступна: обработчик попробует сам и ответит 500, если нужно
+                            LOG_WARN << "сессия не определена: " << e.what();
+                        }
+                        next();
+                    });
+            })
+        .registerPostHandlingAdvice(clearStaleSessionCookie)
         .setCustomErrorHandler([](HttpStatusCode status) { return frameworkError(status); })
         .registerHandler("/health", [db](HttpRequestPtr) { return healthHandler(db); }, {Get})
         .registerHandler("/api/v1/auth/session",

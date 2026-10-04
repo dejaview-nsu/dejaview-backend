@@ -61,6 +61,7 @@ add_executable(dejaview-tests
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
     tests/integration/db_test.cpp
     tests/integration/background_test.cpp
+    tests/integration/guest_test.cpp
     tests/integration/login_test.cpp
     tests/integration/oidc_test.cpp
     tests/integration/registration_test.cpp)

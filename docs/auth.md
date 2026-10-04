@@ -40,8 +40,11 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 | сессия действительна | `SessionUser`: `userId`, `username`, `hasPassword`, `expiresAt` |
 
 - Отказ сам пишется в журнал `security_events` как `access_denied` (#17094 п. 5.1).
-- Проверка - один запрос к БД. БД недоступна - исключение, общий обработчик в `main.cpp` ответит
-  `500 INTERNAL_ERROR`.
+- Сессию по cookie один раз на запрос находит advice до обработчика (`resolveSession`,
+  регистрация в `main.cpp`), `requireSession` берёт её готовой - лишнего запроса к БД нет. БД
+  недоступна - исключение, общий обработчик в `main.cpp` ответит `500 INTERNAL_ERROR`.
+- Гостевым эндпоинтам (регистрация, вход, OIDC) ничего делать не нужно: недействительную cookie
+  `dv_session` в их ответе стирает advice после обработчика (`clearStaleSessionCookie`, тег Auth).
 - Чьи данные отдавать, решает только сессия: владелец берётся из `user->userId`, не из пути и не
   из тела запроса (тег Auth, «Контроль прав»).
 
