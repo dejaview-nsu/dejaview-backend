@@ -1,5 +1,6 @@
 #pragma once
 
+#include "auth/oidc_profile.hpp"
 #include "config.hpp"
 
 #include <drogon/HttpRequest.h>
@@ -40,6 +41,15 @@ drogon::Task<drogon::HttpResponsePtr> oidcCallbackHandler(drogon::orm::DbClientP
                                                           OidcSettings settings,
                                                           drogon::HttpRequestPtr req,
                                                           std::string provider);
+
+// Вторая половина возврата от провайдера, когда профиль уже получен: проверка email, поиск
+// учётной записи по привязке, затем по email, и исход входа. Отдельно от сетевой части, чтобы
+// решения проверялись тестами без настоящего провайдера.
+drogon::Task<drogon::HttpResponsePtr> oidcFinishWithProfile(drogon::orm::DbClientPtr db,
+                                                            OidcSettings settings,
+                                                            drogon::HttpRequestPtr req,
+                                                            std::string provider,
+                                                            OidcProfile profile);
 
 // GET /auth/oidc/pending: данные для страницы «Завершение регистрации» или формы привязки.
 drogon::Task<drogon::HttpResponsePtr> oidcPendingHandler(drogon::orm::DbClientPtr db,

@@ -56,6 +56,16 @@ HttpResponsePtr toSpa(const OidcSettings &settings, std::string_view provider,
                     utils::urlEncodeComponent(std::string(provider)), result));
 }
 
+// Вход не удался: result=error и стёртая dv_oidc. Что именно не так, знает только лог
+HttpResponsePtr failedLogin(const OidcSettings &settings, std::string_view provider,
+                            std::string_view why)
+{
+    LOG_WARN << "OIDC " << provider << ": " << why;
+    auto response = toSpa(settings, provider, "error");
+    response->addCookie(clearOidcCookie());
+    return response;
+}
+
 // 410 AUTH_OIDC_EXPIRED: нет cookie или 30 минут на завершение входа истекли
 HttpResponsePtr oidcExpired(std::string_view provider)
 {
@@ -285,13 +295,7 @@ Task<HttpResponsePtr> oidcStartHandler(orm::DbClientPtr db, OidcSettings setting
 Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings settings,
                                           HttpRequestPtr req, std::string provider)
 {
-    const auto fail = [&](std::string_view why)
-    {
-        LOG_WARN << "OIDC " << provider << ": " << why;
-        auto response = toSpa(settings, provider, "error");
-        response->addCookie(clearOidcCookie());
-        return response;
-    };
+    const auto fail = [&](std::string_view why) { return failedLogin(settings, provider, why); };
 
     const ProviderSpec *spec = findProvider(settings, provider);
     const std::string cookie = req->getCookie("dv_oidc");
@@ -335,9 +339,19 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
     {
         co_return fail("профиль не получен");
     }
+    co_return co_await oidcFinishWithProfile(db, settings, req, provider, *profile);
+}
+
+Task<HttpResponsePtr> oidcFinishWithProfile(orm::DbClientPtr db, OidcSettings settings,
+                                            HttpRequestPtr req, std::string provider,
+                                            OidcProfile profile)
+{
+    const auto fail = [&](std::string_view why) { return failedLogin(settings, provider, why); };
+    const std::string cookie = req->getCookie("dv_oidc");
+
     // Email, не подтверждённому провайдером, не доверяем: иначе адрес, заведённый у провайдера на
     // чужое имя, дал бы доступ к чужой учётной записи у нас
-    if (profile->email.empty() || !profile->emailVerified)
+    if (profile.email.empty() || !profile.emailVerified)
     {
         co_return fail("провайдер не дал подтверждённый email");
     }
@@ -346,7 +360,7 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
     const auto linked = co_await db->execSqlCoro(
         "SELECT user_id, status FROM oidc_accounts JOIN users USING (user_id) "
         "WHERE provider = $1 AND subject = $2",
-        provider, profile->subject);
+        provider, profile.subject);
     if (!linked.empty())
     {
         co_await db->execSqlCoro("DELETE FROM oidc_pending WHERE token_hash = decode($1, 'hex')",
@@ -379,7 +393,7 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
     //    «Завершение регистрации», с годом рождения; до этого данные профиля ждут в oidc_pending
     //    ещё 30 минут (решение архитектора 27.09, contracts/db-schema.md)
     const auto byEmail = co_await db->execSqlCoro(
-        "SELECT user_id FROM users WHERE lower(email) = lower($1)", profile->email);
+        "SELECT user_id FROM users WHERE lower(email) = lower($1)", profile.email);
     const auto linkUserId =
         byEmail.empty() ? std::nullopt : std::optional(byEmail[0]["user_id"].as<std::int64_t>());
     co_await db->execSqlCoro(
@@ -387,7 +401,7 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
         "link_user_id = $5, created_at = now(), "
         "expires_at = now() + $6::int * interval '1 second' "
         "WHERE token_hash = decode($1, 'hex')",
-        tokenHash(cookie), profile->subject, profile->email, profile->displayName, linkUserId,
+        tokenHash(cookie), profile.subject, profile.email, profile.displayName, linkUserId,
         kPendingSeconds);
     auto response =
         toSpa(settings, provider, linkUserId ? "link_required" : "registration_required");

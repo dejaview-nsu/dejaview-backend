@@ -29,6 +29,25 @@ class OidcTest : public DbTest
         return "pending";  // токен, SHA-256 которого лежит в БД
     }
 
+    // Возврат от провайдера, когда профиль уже получен: начало входа настоящее, профиль подставной
+    HttpResponsePtr finish(const std::string &email, bool emailVerified = true)
+    {
+        const auto start = run(oidcStartHandler(db, settings, request(Get, "/start"), "yandex"));
+        const auto req = request(Get, "/callback", Json::Value(),
+                                 {{"dv_oidc", start->getCookie("dv_oidc").value()}});
+        return run(oidcFinishWithProfile(db, settings, req, "yandex",
+                                         {.subject = "sub-42",
+                                          .email = email,
+                                          .emailVerified = emailVerified,
+                                          .displayName = "Иван Петров"}));
+    }
+
+    static std::string result(const HttpResponsePtr &response)
+    {
+        const std::string location = response->getHeader("Location");
+        return location.substr(location.find("result=") + 7);
+    }
+
     HttpResponsePtr getPending(const std::string &cookie)
     {
         return run(oidcPendingHandler(
@@ -172,4 +191,61 @@ TEST_F(OidcTest, PasswordLoginLinksProviderToSameAccountOnly)
     cookie = pending("ivan@yandex.ru", "Ivan", ivan);
     EXPECT_EQ(login("ivan", cookie)->statusCode(), k200OK);
     EXPECT_EQ(scalar("SELECT username FROM oidc_accounts JOIN users USING (user_id)"), "ivan");
+}
+
+TEST_F(OidcTest, NewEmailNeedsRegistration)
+{
+    const auto response = finish("ivan@yandex.ru");
+    EXPECT_EQ(result(response), "registration_required");
+    EXPECT_EQ(response->getCookie("dv_oidc").maxAge(), 1800);  // ещё 30 минут на завершение
+    EXPECT_EQ(scalar("SELECT subject || ' ' || email || ' ' || display_name || ' ' || "
+                     "(link_user_id IS NULL) FROM oidc_pending"),
+              "sub-42 ivan@yandex.ru Иван Петров true");
+    EXPECT_EQ(scalar("SELECT count(*) FROM users"), "0");  // учётная запись - только на complete
+}
+
+TEST_F(OidcTest, KnownEmailNeedsLinkWithPassword)
+{
+    const auto ivan = createUser("ivan", "Ivan@Yandex.ru");
+    EXPECT_EQ(result(finish("ivan@yandex.ru")), "link_required");
+    EXPECT_EQ(scalar("SELECT link_user_id FROM oidc_pending"), std::to_string(ivan));
+}
+
+TEST_F(OidcTest, LinkedAccountSignsInDirectly)
+{
+    const auto ivan = createUser("ivan", "ivan@example.com");
+    db->execSqlSync(
+        "INSERT INTO oidc_accounts (provider, subject, user_id) VALUES ('yandex', 'sub-42', " +
+        std::to_string(ivan) + ")");
+    const auto response = finish("other@yandex.ru");  // email у провайдера мог смениться: важен sub
+
+    EXPECT_EQ(result(response), "success");
+    EXPECT_FALSE(response->getCookie("dv_session").value().empty());
+    EXPECT_EQ(response->getCookie("dv_oidc").maxAge(), 0);
+    EXPECT_EQ(scalar("SELECT count(*) FROM oidc_pending"), "0");
+    EXPECT_EQ(
+        scalar("SELECT details->>'method' FROM security_events WHERE event_type = 'login_success'"),
+        "oidc");
+}
+
+TEST_F(OidcTest, LinkedBlockedAccountIsRejected)
+{
+    const auto ivan = createUser("ivan", "ivan@example.com", "blocked");
+    db->execSqlSync(
+        "INSERT INTO oidc_accounts (provider, subject, user_id) VALUES ('yandex', 'sub-42', " +
+        std::to_string(ivan) + ")");
+    EXPECT_EQ(result(finish("ivan@example.com")), "account_blocked");
+    EXPECT_EQ(scalar("SELECT count(*) FROM sessions"), "0");
+    EXPECT_EQ(
+        scalar("SELECT details->>'reason' FROM security_events WHERE event_type = 'login_failure'"),
+        "account_blocked");
+}
+
+TEST_F(OidcTest, UnverifiedOrMissingEmailIsRejected)
+{
+    createUser("ivan", "ivan@example.com");
+    // иначе чужой адрес, заведённый у провайдера, привёл бы к чужой учётной записи
+    EXPECT_EQ(result(finish("ivan@example.com", false)), "error");
+    EXPECT_EQ(result(finish("")), "error");
+    EXPECT_EQ(scalar("SELECT count(*) FROM sessions"), "0");
 }

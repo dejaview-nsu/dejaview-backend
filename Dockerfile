@@ -15,10 +15,12 @@ RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing 
 
 # среда разработки для VS Code Dev Containers: всё то же + clangd, clang-format, gdb, git и gcovr.
 # clangd и clang-format одной версии: редактор форматирует движком clangd, и команда
-# clang-format должна давать тот же результат
+# clang-format должна давать тот же результат. clang, llvm (llvm-cov) и профильная библиотека
+# clang_rt - для отчёта о покрытии: в отличие от GCC, Clang видит тела корутин (docs/code.md)
 FROM deps AS dev
 RUN apt-get update \
  && apt-get install -y --no-install-recommends clangd-20 clang-format-20 gdb git openssh-client \
+    clang-20 llvm-20 libclang-rt-20-dev \
  && rm -rf /var/lib/apt/lists/* \
  && ln -s clangd-20 /usr/bin/clangd \
  && ln -s clang-format-20 /usr/bin/clang-format \

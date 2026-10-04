@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 project(dejaview-backend LANGUAGES CXX)
 
 # compile_commands.json: по нему clangd узнаёт флаги компиляции и пути к заголовкам
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 find_package(Drogon CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
@@ -74,23 +74,33 @@ include(GoogleTest)
 gtest_discover_tests(dejaview-tests)
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure DEPENDS dejaview-tests)
 
-# Покрытие тестами (#17098 п. 1). В Debug код приложения собирается с --coverage и при работе
-# записывает, какие строки выполнились. Отчёт: cmake --build build --target coverage,
-# подробный по строкам - build/coverage/index.html
-target_compile_options(dejaview-core PRIVATE $<$<CONFIG:Debug>:--coverage>)
-target_link_options(dejaview-core PUBLIC $<$<CONFIG:Debug>:--coverage>)
-# Пороги - #17098: весь src/ - 70% (п. 1.1), авторизация src/auth/ - 80% (п. 1.2). Ниже - команда
-# завершается ошибкой. Интеграционные тесты нужны для обоих: задать TEST_DATABASE_URL.
-add_custom_target(coverage
-    # счётчики копятся между запусками (и от ручного запуска сервера) - обнуляем
-    COMMAND find . -name "*.gcda" -delete
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    COMMAND ${CMAKE_COMMAND} -E make_directory coverage
-    COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/
-            --gcov-executable gcov-14 --txt --html-details coverage/index.html
-            --fail-under-line 70 .
-    COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/auth/
-            --gcov-executable gcov-14 --txt-summary --fail-under-line 80 .
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS dejaview-tests
-    VERBATIM)
+# Покрытие тестами (#17098 п. 1) - только в Clang-сборке: gcov из GCC не видит тел корутин
+# (Task<...>), а это почти все обработчики. Как собрать - docs/code.md. В Debug код приложения
+# собирается с --coverage и при работе записывает, какие строки выполнились. Отчёт:
+# cmake --build build-coverage --target coverage, по строкам - build-coverage/coverage/index.html
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(dejaview-core PRIVATE $<$<CONFIG:Debug>:--coverage>)
+    target_link_options(dejaview-core PUBLIC $<$<CONFIG:Debug>:--coverage>)
+    # gcovr читает счётчики Clang через llvm-cov той же версии, что и компилятор
+    string(REGEX MATCH "^[0-9]+" CLANG_MAJOR ${CMAKE_CXX_COMPILER_VERSION})
+    set(GCOV "llvm-cov-${CLANG_MAJOR} gcov")
+    # Пороги - #17098: весь src/ - 70% (п. 1.1), авторизация src/auth/ - 80% (п. 1.2). Ниже -
+    # команда завершается ошибкой. Интеграционные тесты нужны для обоих: задать TEST_DATABASE_URL.
+    add_custom_target(coverage
+        # счётчики копятся между запусками (и от ручного запуска сервера) - обнуляем
+        COMMAND find . -name "*.gcda" -delete
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        COMMAND ${CMAKE_COMMAND} -E make_directory coverage
+        COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/
+                --gcov-executable ${GCOV} --txt --html-details coverage/index.html
+                --fail-under-line 70 .
+        COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/auth/
+                --gcov-executable ${GCOV} --txt-summary --fail-under-line 80 .
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DEPENDS dejaview-tests
+        VERBATIM)
+else()
+    add_custom_target(coverage
+        COMMAND ${CMAKE_COMMAND} -E echo "Покрытие считается в Clang-сборке: см. docs/code.md"
+        COMMAND ${CMAKE_COMMAND} -E false)
+endif()
