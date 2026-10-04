@@ -1,5 +1,7 @@
+#include "auth/registration.hpp"
 #include "auth/session.hpp"
 #include "config.hpp"
+#include "error_response.hpp"
 #include "health.hpp"
 
 #include <drogon/drogon.h>
@@ -38,8 +40,16 @@ int main()
         // загруженные пользователями: корень статики, которого нет, даёт 404 на любой другой путь
         .setDocumentRoot("/nonexistent")
         .setUploadPath("/tmp/dejaview-uploads")
+        .setExceptionHandler(exceptionHandler)
         .registerHandler("/health", [db](HttpRequestPtr) { return healthHandler(db); }, {Get})
         .registerHandler("/api/v1/auth/session",
                          [db](HttpRequestPtr req) { return getSessionHandler(db, req); }, {Get})
+        .registerHandler("/api/v1/auth/register", [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return registerHandler(db, appUrl, req); }, {Post})
+        .registerHandler("/api/v1/auth/confirm-email",
+                         [db](HttpRequestPtr req) { return confirmEmailHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/auth/resend-confirmation",
+                         [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return resendConfirmationHandler(db, appUrl, req); }, {Post})
         .run();
 }

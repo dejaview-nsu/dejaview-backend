@@ -15,12 +15,14 @@ class LoadConfigTest : public ::testing::Test
     {
         unsetenv("PORT");
         setenv("DATABASE_URL", "postgres://user:secret@db:5432/dejaview", 1);
+        setenv("APP_URL", "https://dejaview.ru", 1);
     }
 
     void TearDown() override
     {
         unsetenv("PORT");
         unsetenv("DATABASE_URL");
+        unsetenv("APP_URL");
     }
 };
 
@@ -71,4 +73,23 @@ TEST_F(LoadConfigTest, ErrorDoesNotContainPassword)
     {
         EXPECT_EQ(std::string(e.what()).find("secret"), std::string::npos) << e.what();
     }
+}
+
+TEST_F(LoadConfigTest, RequiresAppUrl)
+{
+    for (const char *url : {"", "dejaview.ru", "ftp://dejaview.ru"})
+    {
+        SCOPED_TRACE(url);
+        setenv("APP_URL", url, 1);
+        EXPECT_THROW(loadConfig(), std::runtime_error);
+    }
+    unsetenv("APP_URL");
+    EXPECT_THROW(loadConfig(), std::runtime_error);
+}
+
+TEST_F(LoadConfigTest, StripsTrailingSlashFromAppUrl)
+{
+    // иначе ссылка в письме получится https://dejaview.ru//confirm-email
+    setenv("APP_URL", "http://localhost:57437/", 1);
+    EXPECT_EQ(loadConfig().appUrl, "http://localhost:57437");
 }

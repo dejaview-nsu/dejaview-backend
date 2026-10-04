@@ -128,14 +128,6 @@ Task<std::expected<SessionUser, HttpResponsePtr>> requireSession(orm::DbClientPt
 Task<HttpResponsePtr> getSessionHandler(orm::DbClientPtr db, HttpRequestPtr req)
 {
     // Без журнала: SPA спрашивает сессию при каждой загрузке, у гостя это не попытка доступа
-    try
-    {
-        const auto user = co_await checkSession(db, req);
-        co_return user ? HttpResponse::newHttpJsonResponse(sessionInfo(*user)) : user.error();
-    }
-    catch (const orm::DrogonDbException &e)
-    {
-        LOG_ERROR << "GET /auth/session: " << e.base().what();
-        co_return internalError();
-    }
+    const auto user = co_await checkSession(db, req);
+    co_return user ? HttpResponse::newHttpJsonResponse(sessionInfo(*user)) : user.error();
 }

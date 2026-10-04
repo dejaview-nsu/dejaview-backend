@@ -55,6 +55,7 @@ docker compose up --build
 |---|---|---|---|
 | `PORT` | нет | `8081` | порт HTTP-сервера |
 | `DATABASE_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
+| `APP_URL` | да | - | адрес frontend для ссылок в письмах, например `https://dejaview.ru` |
 
 При некорректном значении сервер не стартует: пишет причину в лог (без пароля), код выхода 1.
 

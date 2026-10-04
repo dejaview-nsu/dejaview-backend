@@ -1,5 +1,7 @@
 #include "error_response.hpp"
 
+#include <drogon/drogon.h>
+
 using namespace drogon;
 
 Json::Value errorBody(std::string_view code, std::string_view message, std::string_view field)
@@ -23,4 +25,11 @@ HttpResponsePtr internalError()
 {
     return errorResponse(k500InternalServerError, "INTERNAL_ERROR",
                          "Произошла ошибка. Попробуйте позже");
+}
+
+void exceptionHandler(const std::exception &e, const HttpRequestPtr &req,
+                      std::function<void(const HttpResponsePtr &)> &&callback)
+{
+    LOG_ERROR << req->getMethodString() << ' ' << req->path() << ": " << e.what();
+    callback(internalError());
 }

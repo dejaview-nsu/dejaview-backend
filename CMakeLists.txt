@@ -15,6 +15,7 @@ add_library(dejaview-core STATIC
     src/error_response.cpp
     src/health.cpp
     src/auth/crypto.cpp
+    src/auth/registration.cpp
     src/auth/security_log.cpp
     src/auth/session.cpp
     src/auth/validation.cpp)
