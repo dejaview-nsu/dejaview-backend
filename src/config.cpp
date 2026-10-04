@@ -41,10 +41,11 @@ std::uint16_t readPort()
 
 std::string readDatabaseUrl()
 {
-    const std::string_view url = env("DATABASE_URL").value_or("");
+    const std::string_view url = env("POSTGRES_URL").value_or("");
     if (!url.starts_with("postgres://") && !url.starts_with("postgresql://"))
     {
-        throw std::runtime_error("DATABASE_URL: не задан или не начинается с postgres://");
+        throw std::runtime_error(
+            "POSTGRES_URL: не задан или не начинается с postgres:// или postgresql://");
     }
     return std::string(url);
 }

@@ -54,7 +54,7 @@ docker compose up --build
 | Переменная | Обязательная | По умолчанию | Назначение |
 |---|---|---|---|
 | `PORT` | нет | `8081` | порт HTTP-сервера |
-| `DATABASE_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
+| `POSTGRES_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
 | `APP_URL` | да | - | адрес frontend для ссылок в письмах, например `https://dejaview.ru` |
 | `SMARTCAPTCHA_SERVER_KEY` | в продакшене | - | серверный ключ Yandex SmartCaptcha; не задан - CAPTCHA при входе отключена |
 | `SMTP_URL` | да | - | почтовый сервер: `smtps://smtp.example.ru:465` (TLS), локально `smtp://host.docker.internal:1025` (Mailpit) |

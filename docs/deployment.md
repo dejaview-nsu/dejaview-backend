@@ -5,7 +5,7 @@
 
 ## Переменные окружения
 
-- [ ] `DATABASE_URL` - БД, к которой уже применены миграции (`db-migrate` из `dejaview-infra`).
+- [ ] `POSTGRES_URL` - БД, к которой уже применены миграции (`db-migrate` из `dejaview-infra`).
 - [ ] `APP_URL=https://<домен>` - из него собираются ссылки в письмах и адрес страницы `/auth/oidc`.
 - [ ] `API_URL` - не задавать, если API на том же домене (по умолчанию `APP_URL`).
 - [ ] `SMTP_URL=smtps://<сервер>:465`, `SMTP_FROM=noreply@<домен>`, `SMTP_USER`,
@@ -15,8 +15,8 @@
 - [ ] `OIDC_YANDEX_*`, `OIDC_GOOGLE_*`, `OIDC_VK_CLIENT_ID` - для каждого включённого провайдера.
 - [ ] Секреты - только в секретах сервера: не в git, не в образе, не во frontend.
 
-Сейчас `dejaview-infra/compose.yaml` передаёт backend `POSTGRES_URL`, `MINIO_*` и `INFERENCE_URL`:
-с ним backend не стартует - нужны переменные из списка выше.
+`dejaview-infra/compose.yaml` пока не передаёт backend `APP_URL`, `SMTP_URL` и `SMTP_FROM`: без них
+backend не стартует. `MINIO_*` и `INFERENCE_URL` оттуда backend пока не читает.
 
 ## nginx и домен
 

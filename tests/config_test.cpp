@@ -7,14 +7,14 @@
 #include <string>
 
 // loadConfig читает переменные окружения процесса, поэтому каждый тест начинает с известного
-// состояния: корректный DATABASE_URL и никакого PORT.
+// состояния: корректный POSTGRES_URL и никакого PORT.
 class LoadConfigTest : public ::testing::Test
 {
   protected:
     void SetUp() override
     {
         unsetenv("PORT");
-        setenv("DATABASE_URL", "postgres://user:secret@db:5432/dejaview", 1);
+        setenv("POSTGRES_URL", "postgres://user:secret@db:5432/dejaview", 1);
         setenv("APP_URL", "https://dejaview.ru", 1);
         unsetenv("SMARTCAPTCHA_SERVER_KEY");
         setenv("SMTP_URL", "smtp://mailpit:1025", 1);
@@ -32,7 +32,7 @@ class LoadConfigTest : public ::testing::Test
     void TearDown() override
     {
         unsetenv("PORT");
-        unsetenv("DATABASE_URL");
+        unsetenv("POSTGRES_URL");
         unsetenv("APP_URL");
         unsetenv("SMARTCAPTCHA_SERVER_KEY");
         for (const char *name : {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD"})
@@ -67,19 +67,19 @@ TEST_F(LoadConfigTest, RejectsInvalidPort)
 
 TEST_F(LoadConfigTest, AcceptsPostgresqlScheme)
 {
-    setenv("DATABASE_URL", "postgresql://user:secret@db/dejaview", 1);
+    setenv("POSTGRES_URL", "postgresql://user:secret@db/dejaview", 1);
     EXPECT_NO_THROW(loadConfig());
 }
 
 TEST_F(LoadConfigTest, RequiresDatabaseUrl)
 {
-    unsetenv("DATABASE_URL");
+    unsetenv("POSTGRES_URL");
     EXPECT_THROW(loadConfig(), std::runtime_error);
 }
 
 TEST_F(LoadConfigTest, ErrorDoesNotContainPassword)
 {
-    setenv("DATABASE_URL", "mysql://user:secret@db/dejaview", 1);
+    setenv("POSTGRES_URL", "mysql://user:secret@db/dejaview", 1);
     try
     {
         loadConfig();
