@@ -57,6 +57,9 @@ docker compose up --build
 | `DATABASE_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
 | `APP_URL` | да | - | адрес frontend для ссылок в письмах, например `https://dejaview.ru` |
 | `SMARTCAPTCHA_SERVER_KEY` | в продакшене | - | серверный ключ Yandex SmartCaptcha; не задан - CAPTCHA при входе отключена |
+| `SMTP_URL` | да | - | почтовый сервер: `smtps://smtp.example.ru:465` (TLS), локально `smtp://host.docker.internal:1025` (Mailpit) |
+| `SMTP_FROM` | да | - | адрес отправителя писем: `noreply@dejaview.ru` |
+| `SMTP_USER`, `SMTP_PASSWORD` | нет | - | учётные данные SMTP; не заданы - без авторизации |
 
 При некорректном значении сервер не стартует: пишет причину в лог (без пароля), код выхода 1.
 

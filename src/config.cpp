@@ -62,6 +62,26 @@ std::string readAppUrl()
     }
     return std::string(url);
 }
+SmtpConfig readSmtp()
+{
+    const std::string_view url = env("SMTP_URL").value_or("");
+    if (!url.starts_with("smtp://") && !url.starts_with("smtps://"))
+    {
+        throw std::runtime_error("SMTP_URL: не задан или не начинается с smtp:// или smtps://");
+    }
+    // Адрес попадает в заголовок письма From: перевод строки в нём дописал бы чужие заголовки
+    const std::string_view from = env("SMTP_FROM").value_or("");
+    if (!from.contains('@') || from.find_first_of("\r\n <>") != std::string_view::npos)
+    {
+        throw std::runtime_error("SMTP_FROM: ожидается адрес вида noreply@dejaview.ru");
+    }
+    return SmtpConfig{
+        .url = std::string(url),
+        .from = std::string(from),
+        .user = std::string(env("SMTP_USER").value_or("")),
+        .password = std::string(env("SMTP_PASSWORD").value_or("")),
+    };
+}
 }  // namespace
 
 Config loadConfig()
@@ -72,5 +92,6 @@ Config loadConfig()
         .databaseUrl = readDatabaseUrl(),
         .appUrl = readAppUrl(),
         .smartCaptchaServerKey = std::string(env("SMARTCAPTCHA_SERVER_KEY").value_or("")),
+        .smtp = readSmtp(),
     };
 }

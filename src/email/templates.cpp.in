@@ -1,0 +1,5 @@
+// Сгенерировано CMake из src/email/templates.cpp.in и src/email/templates/*.html. Править
+// HTML-файлы, а не этот.
+#include "email/templates.hpp"
+
+const std::string_view kEmailConfirmHtml = R"html(@EMAIL_CONFIRM_HTML@)html";

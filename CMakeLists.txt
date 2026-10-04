@@ -8,10 +8,24 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 find_package(Drogon CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(libsodium CONFIG REQUIRED)
+find_package(CURL CONFIG REQUIRED)
+
+# HTML-шаблоны писем встраиваются в программу: CMake вставляет содержимое файла в строковый
+# литерал R"html(...)html" (src/email/templates.cpp.in). CMAKE_CONFIGURE_DEPENDS - правка
+# шаблона сама перезапускает cmake при следующей сборке
+set(EMAIL_CONFIRM_TEMPLATE ${CMAKE_SOURCE_DIR}/src/email/templates/email_confirm.html)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${EMAIL_CONFIRM_TEMPLATE})
+file(READ ${EMAIL_CONFIRM_TEMPLATE} EMAIL_CONFIRM_HTML)
+configure_file(src/email/templates.cpp.in ${CMAKE_BINARY_DIR}/generated/email_templates.cpp
+               @ONLY)
 
 # Весь код приложения, кроме main.cpp: его подключают и сервер, и тесты
 add_library(dejaview-core STATIC
+    src/background.cpp
     src/config.cpp
+    src/email/message.cpp
+    src/email/outbox.cpp
+    ${CMAKE_BINARY_DIR}/generated/email_templates.cpp
     src/error_response.cpp
     src/health.cpp
     src/auth/captcha.cpp
@@ -25,7 +39,7 @@ add_library(dejaview-core STATIC
     src/auth/validation.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
-target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium)
+target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl)
 
 add_executable(dejaview-backend src/main.cpp)
 target_link_libraries(dejaview-backend PRIVATE dejaview-core)
@@ -37,7 +51,8 @@ add_executable(dejaview-tests
     tests/auth/crypto_test.cpp
     tests/auth/login_rules_test.cpp
     tests/auth/session_test.cpp
-    tests/auth/validation_test.cpp)
+    tests/auth/validation_test.cpp
+    tests/email/message_test.cpp)
 target_link_libraries(dejaview-tests PRIVATE dejaview-core GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(dejaview-tests)

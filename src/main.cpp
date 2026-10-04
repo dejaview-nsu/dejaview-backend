@@ -1,6 +1,7 @@
 #include "auth/login.hpp"
 #include "auth/registration.hpp"
 #include "auth/session.hpp"
+#include "background.hpp"
 #include "config.hpp"
 #include "error_response.hpp"
 #include "health.hpp"
@@ -37,6 +38,9 @@ int main()
         LOG_WARN << "SMARTCAPTCHA_SERVER_KEY не задан: CAPTCHA при входе отключена. "
                     "Допустимо только локально";
     }
+
+    // Письма из очереди и очистка устаревшего
+    const auto backgroundJobs = startBackgroundJobs(db, config.smtp);
 
     LOG_INFO << "dejaview-backend слушает порт " << config.port;
 
