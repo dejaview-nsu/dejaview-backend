@@ -50,6 +50,7 @@ target_link_libraries(dejaview-backend PRIVATE dejaview-core)
 enable_testing()
 add_executable(dejaview-tests
     tests/config_test.cpp
+    tests/error_response_test.cpp
     tests/auth/crypto_test.cpp
     tests/auth/login_rules_test.cpp
     tests/auth/oidc_profile_test.cpp

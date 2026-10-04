@@ -67,6 +67,8 @@ int main()
         .setDocumentRoot("/nonexistent")
         .setUploadPath("/tmp/dejaview-uploads")
         .setExceptionHandler(exceptionHandler)
+        // 404, 405 и другие ошибки фреймворка - JSON Error вместо HTML-страницы с версией Drogon
+        .setCustomErrorHandler([](HttpStatusCode status) { return frameworkError(status); })
         .registerHandler("/health", [db](HttpRequestPtr) { return healthHandler(db); }, {Get})
         .registerHandler("/api/v1/auth/session",
                          [db](HttpRequestPtr req) { return getSessionHandler(db, req); }, {Get})

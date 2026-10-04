@@ -33,3 +33,22 @@ void exceptionHandler(const std::exception &e, const HttpRequestPtr &req,
     LOG_ERROR << req->getMethodString() << ' ' << req->path() << ": " << e.what();
     callback(internalError());
 }
+
+HttpResponsePtr frameworkError(HttpStatusCode status)
+{
+    if (status == k404NotFound)
+    {
+        return errorResponse(status, "NOT_FOUND", "Не найдено");
+    }
+    if (status == k405MethodNotAllowed)
+    {
+        return errorResponse(status, "METHOD_NOT_ALLOWED", "Метод не поддерживается");
+    }
+    if (status >= k500InternalServerError)
+    {
+        auto response = internalError();
+        response->setStatusCode(status);
+        return response;
+    }
+    return errorResponse(status, "BAD_REQUEST", "Некорректный запрос");
+}
