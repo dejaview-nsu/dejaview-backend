@@ -23,6 +23,11 @@ std::optional<OidcProfile> parseYandexProfile(const Json::Value &info);
 // sub, email, email_verified, name. nullopt - в ответе нет sub.
 std::optional<OidcProfile> parseGoogleProfile(const Json::Value &info);
 
+// Профиль из ответа VK ID (id.vk.com/oauth2/user_info): {"user": {user_id, first_name,
+// last_name, email}}. nullopt - нет user_id. Email у VK бывает не у всех: аккаунт может быть
+// только с телефоном - тогда email пустой.
+std::optional<OidcProfile> parseVkProfile(const Json::Value &info);
+
 // Название провайдера для текстов ошибок: «Не удалось выполнить вход через Яндекс».
 std::string_view providerTitle(std::string_view provider);
 

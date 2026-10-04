@@ -14,7 +14,7 @@
 // OAuth2 authorization code flow со state и PKCE: браузер уходит к провайдеру и возвращается с
 // кодом, обмен кода на токен и запрос профиля делает backend. Незавершённый вход живёт в
 // oidc_pending, к браузеру его привязывает cookie dv_oidc (30 минут).
-// Подключены Яндекс и Google; новый провайдер - строка в таблице kProviders (oidc.cpp).
+// Подключены Яндекс, Google и VK ID; новый провайдер - строка в таблице kProviders (oidc.cpp).
 
 struct OidcSettings
 {
@@ -22,6 +22,7 @@ struct OidcSettings
     std::string apiUrl;  // redirect_uri: {apiUrl}/api/v1/auth/oidc/{provider}/callback
     OidcClient yandex;
     OidcClient google;
+    OidcClient vk;
 };
 
 // Подключённые провайдеры для лога при запуске: «Яндекс, Google». Пусто - ни одного.

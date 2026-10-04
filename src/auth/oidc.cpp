@@ -99,7 +99,20 @@ Task<std::string> requestAccessToken(std::string host, HttpRequestPtr request,
     co_return token;
 }
 
-// Профиль пользователя: GET с токеном в заголовке Authorization. nullopt - ошибка, в логе.
+// Всё для обмена кода на токен: что пришло на callback и что хранилось в oidc_pending. Каждый
+// провайдер берёт нужное: Google - redirectUri, VK - deviceId и state
+struct CodeExchange
+{
+    OidcClient client;
+    std::string code;          // ?code= на callback
+    std::string codeVerifier;  // PKCE, из oidc_pending
+    std::string redirectUri;   // тот же, что ушёл провайдеру на старте
+    std::string state;         // ?state= на callback
+    std::string deviceId;      // ?device_id= на callback, только у VK ID
+};
+
+// Профиль пользователя: запрос с токеном (провайдер решает, в заголовке или в теле). nullopt -
+// ошибка, подробности в логе.
 Task<std::optional<Json::Value>> requestProfile(std::string host, HttpRequestPtr request,
                                                 std::string_view provider)
 {
@@ -114,17 +127,15 @@ Task<std::optional<Json::Value>> requestProfile(std::string host, HttpRequestPtr
 }
 
 // Яндекс ID (yandex.ru/dev/id): токен - oauth.yandex.ru/token, профиль - login.yandex.ru/info.
-// redirectUri при обмене Яндексу не нужен
-Task<std::optional<OidcProfile>> fetchYandexProfile(OidcClient client, std::string code,
-                                                    std::string codeVerifier, std::string)
+Task<std::optional<OidcProfile>> fetchYandexProfile(CodeExchange exchange)
 {
     auto tokenRequest = HttpRequest::newHttpFormPostRequest();
     tokenRequest->setPath("/token");
     tokenRequest->setParameter("grant_type", "authorization_code");
-    tokenRequest->setParameter("code", code);
-    tokenRequest->setParameter("client_id", client.clientId);
-    tokenRequest->setParameter("client_secret", client.clientSecret);
-    tokenRequest->setParameter("code_verifier", codeVerifier);
+    tokenRequest->setParameter("code", exchange.code);
+    tokenRequest->setParameter("client_id", exchange.client.clientId);
+    tokenRequest->setParameter("client_secret", exchange.client.clientSecret);
+    tokenRequest->setParameter("code_verifier", exchange.codeVerifier);
     const std::string token =
         co_await requestAccessToken("https://oauth.yandex.ru", tokenRequest, "yandex");
     if (token.empty())
@@ -142,18 +153,16 @@ Task<std::optional<OidcProfile>> fetchYandexProfile(OidcClient client, std::stri
 
 // Google (developers.google.com/identity/openid-connect): токен - oauth2.googleapis.com/token,
 // профиль - стандартный OIDC userinfo. Google требует при обмене тот же redirect_uri
-Task<std::optional<OidcProfile>> fetchGoogleProfile(OidcClient client, std::string code,
-                                                    std::string codeVerifier,
-                                                    std::string redirectUri)
+Task<std::optional<OidcProfile>> fetchGoogleProfile(CodeExchange exchange)
 {
     auto tokenRequest = HttpRequest::newHttpFormPostRequest();
     tokenRequest->setPath("/token");
     tokenRequest->setParameter("grant_type", "authorization_code");
-    tokenRequest->setParameter("code", code);
-    tokenRequest->setParameter("client_id", client.clientId);
-    tokenRequest->setParameter("client_secret", client.clientSecret);
-    tokenRequest->setParameter("code_verifier", codeVerifier);
-    tokenRequest->setParameter("redirect_uri", redirectUri);
+    tokenRequest->setParameter("code", exchange.code);
+    tokenRequest->setParameter("client_id", exchange.client.clientId);
+    tokenRequest->setParameter("client_secret", exchange.client.clientSecret);
+    tokenRequest->setParameter("code_verifier", exchange.codeVerifier);
+    tokenRequest->setParameter("redirect_uri", exchange.redirectUri);
     const std::string token =
         co_await requestAccessToken("https://oauth2.googleapis.com", tokenRequest, "google");
     if (token.empty())
@@ -169,6 +178,33 @@ Task<std::optional<OidcProfile>> fetchGoogleProfile(OidcClient client, std::stri
     co_return info ? parseGoogleProfile(*info) : std::nullopt;
 }
 
+// VK ID (id.vk.com/about/business/go/docs): OAuth 2.1, секрет приложения не нужен - его заменяет
+// PKCE. Особенности: обмен требует device_id из callback, профиль - POST с токеном в теле
+Task<std::optional<OidcProfile>> fetchVkProfile(CodeExchange exchange)
+{
+    auto tokenRequest = HttpRequest::newHttpFormPostRequest();
+    tokenRequest->setPath("/oauth2/auth");
+    tokenRequest->setParameter("grant_type", "authorization_code");
+    tokenRequest->setParameter("code", exchange.code);
+    tokenRequest->setParameter("client_id", exchange.client.clientId);
+    tokenRequest->setParameter("code_verifier", exchange.codeVerifier);
+    tokenRequest->setParameter("redirect_uri", exchange.redirectUri);
+    tokenRequest->setParameter("device_id", exchange.deviceId);
+    tokenRequest->setParameter("state", exchange.state);
+    const std::string token = co_await requestAccessToken("https://id.vk.com", tokenRequest, "vk");
+    if (token.empty())
+    {
+        co_return std::nullopt;
+    }
+
+    auto infoRequest = HttpRequest::newHttpFormPostRequest();
+    infoRequest->setPath("/oauth2/user_info");
+    infoRequest->setParameter("client_id", exchange.client.clientId);
+    infoRequest->setParameter("access_token", token);
+    const auto info = co_await requestProfile("https://id.vk.com", infoRequest, "vk");
+    co_return info ? parseVkProfile(*info) : std::nullopt;
+}
+
 // Провайдеры. Новый - строка в таблице и функция профиля: остальное (state, PKCE, поиск
 // учётной записи, привязка, регистрация) общее
 struct ProviderSpec
@@ -176,9 +212,7 @@ struct ProviderSpec
     std::string_view name;          // как в пути: /auth/oidc/{name}/start
     std::string_view authorizeUrl;  // страница входа у провайдера
     std::string_view scope;         // доступы: email и имя профиля (#17148 п. 3.2 шаг 7)
-    Task<std::optional<OidcProfile>> (*fetchProfile)(OidcClient client, std::string code,
-                                                     std::string codeVerifier,
-                                                     std::string redirectUri);
+    Task<std::optional<OidcProfile>> (*fetchProfile)(CodeExchange exchange);
     // Указатель на поле OidcSettings с приложением этого провайдера: settings.*client
     OidcClient OidcSettings::*client;
 };
@@ -188,6 +222,8 @@ constexpr ProviderSpec kProviders[] = {
      &OidcSettings::yandex},
     {"google", "https://accounts.google.com/o/oauth2/v2/auth", "openid email profile",
      fetchGoogleProfile, &OidcSettings::google},
+    {"vk", "https://id.vk.com/authorize", "vkid.personal_info email", fetchVkProfile,
+     &OidcSettings::vk},
 };
 
 // Провайдер из пути запроса: есть в таблице и для него задано приложение. Иначе nullptr
@@ -283,9 +319,13 @@ Task<HttpResponsePtr> oidcCallbackHandler(orm::DbClientPtr db, OidcSettings sett
     std::optional<OidcProfile> profile;
     try
     {
-        profile = co_await spec->fetchProfile(settings.*(spec->client), req->getParameter("code"),
-                                              pending[0]["code_verifier"].as<std::string>(),
-                                              redirectUri(settings, provider));
+        profile = co_await spec->fetchProfile(
+            CodeExchange{.client = settings.*(spec->client),
+                         .code = req->getParameter("code"),
+                         .codeVerifier = pending[0]["code_verifier"].as<std::string>(),
+                         .redirectUri = redirectUri(settings, provider),
+                         .state = req->getParameter("state"),
+                         .deviceId = req->getParameter("device_id")});
     }
     catch (const std::exception &e)
     {

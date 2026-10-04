@@ -21,8 +21,9 @@ class LoadConfigTest : public ::testing::Test
         setenv("SMTP_FROM", "noreply@dejaview.ru", 1);
         unsetenv("SMTP_USER");
         unsetenv("SMTP_PASSWORD");
-        for (const char *name : {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
-                                 "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET"})
+        for (const char *name :
+             {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
+              "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET", "OIDC_VK_CLIENT_ID"})
         {
             unsetenv(name);
         }

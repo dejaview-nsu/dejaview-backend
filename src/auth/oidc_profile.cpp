@@ -136,6 +136,27 @@ std::optional<OidcProfile> parseGoogleProfile(const Json::Value &info)
                        .displayName = info.get("name", "").asString()};
 }
 
+std::optional<OidcProfile> parseVkProfile(const Json::Value &info)
+{
+    const Json::Value &user = info["user"];
+    // user_id приходит строкой или числом - asString понимает оба
+    const std::string id = user.get("user_id", "").asString();
+    if (id.empty())
+    {
+        return std::nullopt;
+    }
+    std::string name = user.get("first_name", "").asString();
+    if (const std::string last = user.get("last_name", "").asString(); !last.empty())
+    {
+        name += (name.empty() ? "" : " ") + last;
+    }
+    const std::string email = user.get("email", "").asString();
+    // Допущение: VK ID отдаёт email, только подтверждённый пользователем. Поле user.verified -
+    // это галочка верификации страницы, к email отношения не имеет
+    return OidcProfile{
+        .subject = id, .email = email, .emailVerified = !email.empty(), .displayName = name};
+}
+
 std::string_view providerTitle(std::string_view provider)
 {
     // Справочник: новый провайдер - новая строка. constexpr - таблица готова при компиляции

@@ -43,7 +43,8 @@ int main()
     const OidcSettings oidc{.appUrl = config.appUrl,
                             .apiUrl = config.apiUrl,
                             .yandex = config.yandex,
-                            .google = config.google};
+                            .google = config.google,
+                            .vk = config.vk};
     if (const std::string providers = enabledOidcProviders(oidc); !providers.empty())
     {
         LOG_INFO << "OIDC: подключены " << providers << ", redirect_uri " << config.apiUrl

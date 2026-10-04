@@ -73,6 +73,35 @@ TEST(ParseGoogleProfileTest, RejectsResponseWithoutSub)
     EXPECT_EQ(parseGoogleProfile(json(R"({"error": "invalid_token"})")), std::nullopt);
 }
 
+TEST(ParseVkProfileTest, ReadsUserObject)
+{
+    // ответ id.vk.com/oauth2/user_info
+    const auto profile = parseVkProfile(json(R"({"user": {
+        "user_id": "1234567890", "first_name": "Иван", "last_name": "Петров",
+        "email": "ivan@example.com", "verified": false, "phone": "79991234567"}})"));
+    ASSERT_TRUE(profile);
+    EXPECT_EQ(profile->subject, "1234567890");
+    EXPECT_EQ(profile->email, "ivan@example.com");
+    EXPECT_TRUE(profile->emailVerified);  // verified - про страницу, не про email
+    EXPECT_EQ(profile->displayName, "Иван Петров");
+}
+
+TEST(ParseVkProfileTest, NumericIdAndNoEmail)
+{
+    // аккаунт только с телефоном: email нет - войти через VK не выйдет (вопрос к аналитикам)
+    const auto profile = parseVkProfile(json(R"({"user": {"user_id": 42, "first_name": "Иван"}})"));
+    ASSERT_TRUE(profile);
+    EXPECT_EQ(profile->subject, "42");
+    EXPECT_EQ(profile->email, "");
+    EXPECT_FALSE(profile->emailVerified);
+    EXPECT_EQ(profile->displayName, "Иван");
+}
+
+TEST(ParseVkProfileTest, RejectsResponseWithoutUser)
+{
+    EXPECT_EQ(parseVkProfile(json(R"({"error": "invalid_token"})")), std::nullopt);
+}
+
 TEST(SuggestUsernameTest, TransliteratesCyrillic)
 {
     EXPECT_EQ(suggestUsername("Владимир Шарапов", ""), "vladimir_sharapov");

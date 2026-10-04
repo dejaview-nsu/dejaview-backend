@@ -102,5 +102,6 @@ Config loadConfig()
                    .clientSecret = std::string(env("OIDC_YANDEX_CLIENT_SECRET").value_or(""))},
         .google = {.clientId = std::string(env("OIDC_GOOGLE_CLIENT_ID").value_or("")),
                    .clientSecret = std::string(env("OIDC_GOOGLE_CLIENT_SECRET").value_or(""))},
+        .vk = {.clientId = std::string(env("OIDC_VK_CLIENT_ID").value_or(""))},
     };
 }
