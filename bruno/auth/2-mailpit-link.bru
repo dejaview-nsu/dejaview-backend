@@ -1,0 +1,33 @@
+meta {
+  name: Ссылка из письма (Mailpit)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{mailpitUrl}}/api/v1/message/latest
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // Письма отправляет фоновый поток раз в 5 с
+  await new Promise((resolve) => setTimeout(resolve, 6000));
+}
+
+script:post-response {
+  // Токен из ссылки .../confirm-email?token=... - для следующего запроса
+  const match = (res.body.Text || "").match(/token=([A-Za-z0-9_-]+)/);
+  if (match) {
+    bru.setVar("confirmToken", match[1]);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.To[0].Address: eq {{email}}
+}
+
+docs {
+  Нужен Mailpit (`docker compose up -d mailpit`) и `SMTP_URL` на него в `.env`.
+}

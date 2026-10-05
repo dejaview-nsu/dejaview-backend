@@ -1,0 +1,27 @@
+meta {
+  name: Завершение регистрации
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/oidc/complete
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: dv_oidc={{oidcCookie}}
+}
+
+body:json {
+  {
+    "username": "{{oidcUsername}}",
+    "birth_year": 2000
+  }
+}
+
+docs {
+  После «Данные незавершённого входа» с `kind: registration`: `oidcUsername` - предложенное
+  `suggested_username` или своё. Успех - 201 и cookie `dv_session`, `dv_oidc` стирается.
+}

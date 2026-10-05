@@ -1,0 +1,32 @@
+meta {
+  name: Регистрация
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "username": "{{username}}",
+    "email": "{{email}}",
+    "birth_year": 2000,
+    "password": "{{password}}"
+  }
+}
+
+script:pre-request {
+  // Каждый прогон - новый пользователь, иначе второй прогон получит 409
+  const suffix = Date.now().toString(36);
+  bru.setVar("username", `tester_${suffix}`);
+  bru.setVar("email", `tester_${suffix}@example.com`);
+}
+
+assert {
+  res.status: eq 201
+  res.body.resend_after: eq 60
+}

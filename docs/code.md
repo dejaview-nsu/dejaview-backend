@@ -4,11 +4,15 @@
 
 ```
 src/
-  main.cpp          точка входа: конфигурация → БД → маршруты → run()
-  config.hpp/.cpp   настройки из переменных окружения
-  health.hpp/.cpp   GET /health
-tests/              модульные тесты
-db/migrations/      миграции dbmate
+  main.cpp              точка входа: конфигурация → БД → фоновые задачи → маршруты → run()
+  config.hpp/.cpp       настройки из переменных окружения
+  error_response.*      тело ошибки Error из контракта
+  health.*              GET /health
+  background.*          фоновый поток: письма из очереди, очистка устаревшего
+  auth/                 регистрация, вход, сессии, OIDC - docs/auth.md
+  email/                письма: шаблоны templates/*.html, формат, отправка из очереди
+tests/                  модульные тесты, раскладка как в src/
+db/migrations/          миграции dbmate
 ```
 
 - Код делится по разделам предметной области, как теги в `api/openapi.yaml`: `movies`, `search`,
@@ -23,8 +27,29 @@ db/migrations/      миграции dbmate
 
 ## Тесты
 
-- Файлы `tests/<модуль>_test.cpp`, GoogleTest. Новый файл добавить в `add_executable(dejaview-tests ...)`
-  в `CMakeLists.txt`.
-- Модульные тесты не обращаются к БД и сети.
+- Файлы `tests/<раздел>/<модуль>_test.cpp`, GoogleTest. Новый файл добавить в
+  `add_executable(dejaview-tests ...)` в `CMakeLists.txt`.
 - Имя теста говорит, что проверяется: `LoadConfigTest.RejectsInvalidPort`.
-- Порог покрытия 70% (#17098 п. 1.1): ниже - `coverage` завершается ошибкой.
+- **Модульные** тесты - чистая логика, без БД и сети.
+- **Интеграционные** - `tests/integration/`: обработчики вызываются напрямую с настоящим PostgreSQL,
+  проверяются ответ и строки в таблицах. Класс теста наследует `DbTest` (`db_test.hpp`): перед
+  каждым тестом таблицы пустые, миграции из `db/migrations` применяются сами, есть помощники
+  `request`, `run`, `scalar`, `createUser`.
+- БД интеграционных тестов - `TEST_DATABASE_URL`, сервис `postgres-test` из `compose.yaml`:
+  `docker compose up -d postgres-test` на компьютере. В Dev Container переменная уже задана. Без неё
+  интеграционные тесты пропускаются (Skipped), остальные идут как обычно.
+- Пороги покрытия (#17098): весь `src/` - 70%, авторизация `src/auth/` - 80%. Ниже - `coverage`
+  завершается ошибкой; без тестовой БД порог авторизации не набрать.
+- **Покрытие считается только Clang-сборкой:** gcov из GCC не видит тела корутин (`Task<...>`), а
+  это почти все обработчики. Отдельная сборка в `build-coverage/`, в Dev Container:
+  ```sh
+  CXX=clang++-20 cmake -S . -B build-coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+  cmake --build build-coverage --target coverage
+  ```
+  Отчёт по строкам - `build-coverage/coverage/index.html`. В обычной сборке (GCC) цели `coverage`
+  нет смысла: она подскажет команды выше и завершится ошибкой.
+- **Внешние сервисы** (SmartCaptcha, OIDC-провайдеры) в тестах заменяет фейковый HTTP-сервер в том
+  же процессе: `DbTest::fakeReply` задаёт ответ на путь, `fakeReceived` - что прислал backend. Его
+  адрес попадает в код через `CaptchaSettings::url` и `OidcSettings::fakeProviderUrl`. С настоящими
+  сервисами вход проверяют вручную ([oidc.md](oidc.md)).

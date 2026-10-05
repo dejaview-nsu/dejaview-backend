@@ -16,7 +16,7 @@ REST API мультимодального поиска, бизнес-логик�
 - [Drogon](https://github.com/drogonframework/drogon) 1.9.13: HTTP-сервер, JSON, клиент PostgreSQL
 - Conan 2: зависимости C++, точные версии в `conan.lock`
 - PostgreSQL 16, миграции [dbmate](https://github.com/amacneil/dbmate)
-- GoogleTest, gcovr, clang-format 18
+- GoogleTest, gcovr (покрытие - Clang 20), clang-format 20
 - Сборка и запуск в Docker: компилятор на компьютере не нужен
 
 ## Быстрый старт
@@ -54,7 +54,16 @@ docker compose up --build
 | Переменная | Обязательная | По умолчанию | Назначение |
 |---|---|---|---|
 | `PORT` | нет | `8081` | порт HTTP-сервера |
-| `DATABASE_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
+| `POSTGRES_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
+| `APP_URL` | да | - | адрес frontend для ссылок в письмах, например `https://dejaview.ru` |
+| `SMARTCAPTCHA_SERVER_KEY` | в продакшене | - | серверный ключ Yandex SmartCaptcha; не задан - CAPTCHA при входе отключена |
+| `SMTP_URL` | да | - | почтовый сервер: `smtps://smtp.example.ru:465` (TLS), локально `smtp://host.docker.internal:1025` (Mailpit) |
+| `SMTP_FROM` | да | - | адрес отправителя писем: `noreply@dejaview.ru` |
+| `SMTP_USER`, `SMTP_PASSWORD` | нет | - | учётные данные SMTP; не заданы - без авторизации |
+| `API_URL` | нет | `APP_URL` | публичный адрес backend для redirect_uri OIDC: `{API_URL}/api/v1/auth/oidc/<провайдер>/callback` |
+| `OIDC_YANDEX_CLIENT_ID`, `OIDC_YANDEX_CLIENT_SECRET` | нет | - | приложение на oauth.yandex.ru; не заданы - вход через Яндекс выключен |
+| `OIDC_GOOGLE_CLIENT_ID`, `OIDC_GOOGLE_CLIENT_SECRET` | нет | - | клиент Web application в console.cloud.google.com; не заданы - вход через Google выключен |
+| `OIDC_VK_CLIENT_ID` | нет | - | ID приложения в кабинете VK ID; не задан - вход через VK выключен |
 
 При некорректном значении сервер не стартует: пишет причину в лог (без пароля), код выхода 1.
 
@@ -63,6 +72,12 @@ docker compose up --build
 - [Разработка в Dev Container](docs/devcontainer.md): сборка, отладка, тесты, частые проблемы
 - [База данных и миграции](docs/database.md): новая миграция, сброс БД
 - [Код и тесты](docs/code.md): структура `src/`, правила для кода и тестов
+- [Авторизация](docs/auth.md): защита эндпоинта сессией, сессия для локальной проверки,
+  устройство регистрации, входа, писем и OIDC
+- [Вход через Яндекс, Google и VK ID](docs/oidc.md): регистрация приложений, проверка, частые ошибки
+- [Frontend](docs/frontend.md): подключение SPA к API, локальный запуск, проверка экранов
+- [Письма](docs/email.md): Mailpit, настоящая отправка, HTML-шаблон, продакшен
+- [Развёртывание](docs/deployment.md): чек-лист переменных, nginx, провайдеров
 
 ## Ссылки
 

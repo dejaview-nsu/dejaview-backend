@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  Письмо подтверждения email (#17148 п. 2.5). Встраивается в программу при сборке (CMakeLists.txt).
+  Подстановки: {{username}}, {{link}} - значения экранируются для HTML.
+  Правила вёрстки писем: таблицы вместо flex/grid, стили только в style="..." (Gmail и Outlook
+  вырезают <style> и внешний CSS), без скриптов, картинок и веб-шрифтов. Ширина - 600px.
+  Просмотр: открыть файл в браузере или отправить письмо в Mailpit (там же вкладка HTML Check).
+  Цвета - заглушка до дизайна.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Подтвердите email в DejaView</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f4f5;">
+<!-- Текст для превью в списке писем: виден рядом с темой, в самом письме скрыт -->
+<div style="display:none; max-height:0; overflow:hidden;">Остался один шаг: подтвердите email, чтобы завершить регистрацию.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f5;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background-color:#ffffff; border-radius:12px;">
+        <tr>
+          <td style="padding:32px 40px 0; font-family:Arial, Helvetica, sans-serif; font-size:22px; font-weight:bold; color:#18181b;">
+            DejaView
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 40px 0; font-family:Arial, Helvetica, sans-serif; color:#18181b;">
+            <h1 style="margin:0 0 16px; font-size:24px; line-height:32px;">Подтвердите email</h1>
+            <p style="margin:0 0 16px; font-size:16px; line-height:24px;">Здравствуйте, {{username}}!</p>
+            <p style="margin:0 0 24px; font-size:16px; line-height:24px;">Чтобы завершить регистрацию в DejaView, нажмите на кнопку.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 40px;">
+            <!-- Кнопка из ячейки таблицы и ссылки: так её одинаково рисуют все клиенты, включая Outlook -->
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="border-radius:8px; background-color:#4f46e5;">
+                  <a href="{{link}}" target="_blank" style="display:inline-block; padding:14px 28px; font-family:Arial, Helvetica, sans-serif; font-size:16px; font-weight:bold; color:#ffffff; text-decoration:none; border-radius:8px;">Подтвердить email</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 40px 0; font-family:Arial, Helvetica, sans-serif; font-size:14px; line-height:20px; color:#52525b;">
+            Если кнопка не работает, скопируйте ссылку в адресную строку браузера:<br>
+            <a href="{{link}}" target="_blank" style="color:#4f46e5; word-break:break-all;">{{link}}</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 40px 32px; font-family:Arial, Helvetica, sans-serif; font-size:14px; line-height:20px; color:#71717a;">
+            Ссылка действует 24 часа. Если вы не регистрировались в DejaView, просто проигнорируйте это письмо.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

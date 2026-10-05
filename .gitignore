@@ -1,4 +1,6 @@
 .env
 build/
+build-coverage/
 CMakeUserPresets.json
 .cache/
+.DS_Store

@@ -5,6 +5,14 @@
         "context": "..",
         "target": "dev"
     },
+    "mounts": [
+        "source=claude-code-config-${devcontainerId},target=/root/.claude,type=volume"
+    ],
+    "containerEnv": {
+        "CLAUDE_CONFIG_DIR": "/root/.claude",
+        // БД для интеграционных тестов - сервис postgres-test из compose.yaml
+        "TEST_DATABASE_URL": "postgres://dejaview:dejaview_test_only@host.docker.internal:57439/dejaview_test?sslmode=disable"
+    },
     // Наш код в Debug для отладчика, библиотеки в Release (уже собраны в образе).
     // Conan создаёт preset conan-debug с Ninja: его же подхватывает расширение CMake Tools.
     "postCreateCommand": "conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23 -s '&:build_type=Debug' -c tools.cmake.cmaketoolchain:generator=Ninja && cmake --preset conan-debug",
@@ -12,9 +20,24 @@
         "vscode": {
             "extensions": [
                 "llvm-vs-code-extensions.vscode-clangd",
-                "ms-vscode.cpptools"
+                "ms-vscode.cpptools",
+                "bruno-api-client.bruno",
+                "mtxr.sqltools",
+                "mtxr.sqltools-driver-pg"
             ],
             "settings": {
+                // БД из dejaview-infra; пароль - локальный по умолчанию из её .env.example
+                "sqltools.connections": [
+                    {
+                        "name": "dejaview (локальная)",
+                        "driver": "PostgreSQL",
+                        "server": "host.docker.internal",
+                        "port": 57432,
+                        "database": "dejaview",
+                        "username": "dejaview",
+                        "password": "dejaview_local_only"
+                    }
+                ],
                 // C/C++ от Microsoft нужен только для отладчика, подсказки даёт clangd
                 "C_Cpp.intelliSenseEngine": "disabled",
                 "[cpp]": {
