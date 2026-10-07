@@ -39,7 +39,8 @@ add_library(dejaview-core STATIC
     src/auth/registration.cpp
     src/auth/security_log.cpp
     src/auth/session.cpp
-    src/auth/validation.cpp)
+    src/auth/validation.cpp
+    src/search/rules.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
 target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl)
@@ -58,6 +59,7 @@ add_executable(dejaview-tests
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp
+    tests/search/rules_test.cpp
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
     tests/integration/db_test.cpp
     tests/integration/background_test.cpp
