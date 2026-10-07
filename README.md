@@ -15,6 +15,7 @@ REST API мультимодального поиска, бизнес-логик�
 - C++23, GCC 14, CMake + Ninja
 - [Drogon](https://github.com/drogonframework/drogon) 1.9.13: HTTP-сервер, JSON, клиент PostgreSQL
 - Conan 2: зависимости C++, точные версии в `conan.lock`
+- libmagic (определение формата файлов) - системная, из apt, а не из Conan: база правил - файл системы, на всех стадиях Docker одна и та же Ubuntu
 - PostgreSQL 16, миграции [dbmate](https://github.com/amacneil/dbmate)
 - GoogleTest, gcovr (покрытие - Clang 20), clang-format 20
 - Сборка и запуск в Docker: компилятор на компьютере не нужен

@@ -11,6 +11,15 @@ find_package(PostgreSQL CONFIG REQUIRED)
 find_package(libsodium CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 
+# libmagic системная (apt: libmagic-dev, в образе libmagic1t64 с базой правил), не из Conan:
+# база правил - файл системы, и на всех стадиях Docker одна Ubuntu. pkg-config в образах нет
+find_path(MAGIC_INCLUDE_DIR magic.h REQUIRED)
+find_library(MAGIC_LIBRARY magic REQUIRED)
+add_library(libmagic UNKNOWN IMPORTED)
+set_target_properties(libmagic PROPERTIES
+    IMPORTED_LOCATION ${MAGIC_LIBRARY}
+    INTERFACE_INCLUDE_DIRECTORIES ${MAGIC_INCLUDE_DIR})
+
 # HTML-шаблоны писем встраиваются в программу: CMake вставляет содержимое файла в строковый
 # литерал R"html(...)html" (src/email/templates.cpp.in). CMAKE_CONFIGURE_DEPENDS - правка
 # шаблона сама перезапускает cmake при следующей сборке
@@ -40,10 +49,13 @@ add_library(dejaview-core STATIC
     src/auth/security_log.cpp
     src/auth/session.cpp
     src/auth/validation.cpp
+    src/search/errors.cpp
+    src/search/magic_mime.cpp
     src/search/rules.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
-target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl)
+target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl
+                      libmagic)
 
 add_executable(dejaview-backend src/main.cpp)
 target_link_libraries(dejaview-backend PRIVATE dejaview-core)
@@ -59,6 +71,7 @@ add_executable(dejaview-tests
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp
+    tests/search/errors_test.cpp
     tests/search/rules_test.cpp
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
     tests/integration/db_test.cpp
@@ -70,7 +83,8 @@ add_executable(dejaview-tests
 target_include_directories(dejaview-tests PRIVATE tests)
 # миграции интеграционные тесты применяют сами - через libpq, как dbmate
 target_compile_definitions(dejaview-tests PRIVATE
-    DEJAVIEW_MIGRATIONS_DIR="${CMAKE_SOURCE_DIR}/db/migrations")
+    DEJAVIEW_MIGRATIONS_DIR="${CMAKE_SOURCE_DIR}/db/migrations"
+    DEJAVIEW_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
 target_link_libraries(dejaview-tests PRIVATE dejaview-core PostgreSQL::PostgreSQL GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(dejaview-tests)
