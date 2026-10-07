@@ -51,6 +51,7 @@ add_library(dejaview-core STATIC
     src/auth/validation.cpp
     src/search/errors.cpp
     src/search/magic_mime.cpp
+    src/search/ml_reply.cpp
     src/search/rules.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
@@ -72,6 +73,7 @@ add_executable(dejaview-tests
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp
     tests/search/errors_test.cpp
+    tests/search/ml_reply_test.cpp
     tests/search/rules_test.cpp
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
     tests/integration/db_test.cpp
