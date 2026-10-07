@@ -8,10 +8,14 @@ ENV PIPX_BIN_DIR=/usr/local/bin
 RUN pipx install conan==2.33.0 && conan profile detect
 WORKDIR /src
 
-# все библиотеки: пересобираются только при изменении conanfile.txt или conan.lock
+# библиотеки: Conan пересобирается только при изменении conanfile.txt или conan.lock;
+# libmagic системная и ставится после Conan, чтобы её правка не пересобирала Conan-слой
 FROM toolchain AS deps
 COPY conanfile.txt conan.lock ./
 RUN conan install . --lockfile=conan.lock --output-folder=build --build=missing -s compiler.cppstd=23
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libmagic-dev \
+ && rm -rf /var/lib/apt/lists/*
 
 # среда разработки для VS Code Dev Containers: всё то же + clangd, clang-format, gdb, git и gcovr.
 # clangd и clang-format одной версии: редактор форматирует движком clangd, и команда
@@ -35,9 +39,10 @@ RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FI
 
 # итоговый образ
 FROM ubuntu:24.04 AS runtime
-# корневые сертификаты: без них не проверить TLS-сертификат SmartCaptcha, SMTP и OIDC-провайдеров
+# корневые сертификаты: без них не проверить TLS-сертификат SmartCaptcha, SMTP и OIDC-провайдеров;
+# libmagic1t64 тянет libmagic-mgc - базу правил, по которой определяется формат загруженных файлов
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates libmagic1t64 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/build/dejaview-backend /usr/local/bin/dejaview-backend
 USER ubuntu
