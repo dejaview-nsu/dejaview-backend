@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -21,6 +23,21 @@ struct OidcClient
     std::string clientSecret;
 };
 
+// ML-сервис поиска по изображению и видео. Числа по умолчанию - стартовые значения контракта
+struct MlConfig
+{
+    std::string url = "http://ml:8000";  // ML_URL
+    // ML_MAX_CONCURRENT: сколько обращений к ML одновременно на экземпляр backend
+    std::size_t maxConcurrent = 4;
+    // Один срок на весь поиск, включая соединение и проверку /health
+    std::chrono::milliseconds imageTimeout{9'000};   // ML_IMAGE_TIMEOUT_MS
+    std::chrono::milliseconds videoTimeout{14'000};  // ML_VIDEO_TIMEOUT_MS
+    // ML_FAILURES_TO_OPEN: аварий подряд до отключения вызовов
+    int failuresToOpen = 5;
+    // ML_OPEN_FOR_MS: сколько вызовы отключены
+    std::chrono::milliseconds openFor{30'000};
+};
+
 struct Config
 {
     std::uint16_t port;
@@ -40,6 +57,7 @@ struct Config
     OidcClient yandex;
     OidcClient google;
     OidcClient vk;  // только clientId: VK ID обходится без секрета приложения (PKCE)
+    MlConfig ml;
 };
 
 // Читает настройки из переменных окружения. При некорректном значении бросает std::runtime_error.
