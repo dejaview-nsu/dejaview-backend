@@ -49,6 +49,7 @@ add_library(dejaview-core STATIC
     src/auth/security_log.cpp
     src/auth/session.cpp
     src/auth/validation.cpp
+    src/search/circuit_breaker.cpp
     src/search/errors.cpp
     src/search/magic_mime.cpp
     src/search/ml_reply.cpp
@@ -72,6 +73,7 @@ add_executable(dejaview-tests
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp
+    tests/search/circuit_breaker_test.cpp
     tests/search/errors_test.cpp
     tests/search/ml_reply_test.cpp
     tests/search/rules_test.cpp
