@@ -52,6 +52,7 @@ add_library(dejaview-core STATIC
     src/search/circuit_breaker.cpp
     src/search/errors.cpp
     src/search/magic_mime.cpp
+    src/search/ml_client.cpp
     src/search/ml_reply.cpp
     src/search/rules.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
@@ -82,6 +83,7 @@ add_executable(dejaview-tests
     tests/integration/background_test.cpp
     tests/integration/guest_test.cpp
     tests/integration/login_test.cpp
+    tests/integration/ml_client_test.cpp
     tests/integration/oidc_test.cpp
     tests/integration/registration_test.cpp)
 target_include_directories(dejaview-tests PRIVATE tests)
