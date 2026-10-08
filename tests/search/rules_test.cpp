@@ -1,14 +1,12 @@
 #include "search/rules.hpp"
+#include "search/samples.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <atomic>
-#include <fstream>
-#include <iterator>
 #include <optional>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -18,24 +16,6 @@ using namespace std::string_literals;
 
 namespace
 {
-
-// Отсутствующий образец - сбой теста, а не пропуск
-std::string readSample(const std::string &name)
-{
-    const std::string path = std::string(DEJAVIEW_TEST_DATA_DIR) + "/search/" + name;
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
-    {
-        throw std::runtime_error("sample not found: " + path);
-    }
-    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-}
-
-std::string padded(std::string head, std::size_t total)
-{
-    head.resize(total, 'x');
-    return head;
-}
 
 // Фиксированное зерно: тест детерминирован
 std::string randomBytes(std::size_t size)
