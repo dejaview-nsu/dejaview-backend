@@ -19,7 +19,6 @@
 
 using namespace drogon;
 using namespace std::chrono_literals;
-using namespace std::string_literals;
 
 namespace
 {
@@ -27,8 +26,8 @@ namespace
 using SteadyClock = std::chrono::steady_clock;
 using Result = std::expected<std::vector<std::int64_t>, SearchError>;
 
-const std::string kPng = "\x89PNG\r\n\x1a\n"s + "payload"s;
-const std::string kWebm = "\x1A\x45\xDF\xA3webm-bytes"s;
+const std::string kPng = "image-bytes";
+const std::string kWebm = "video-bytes";
 const std::string kImagePath = "/v1/search/image";
 const std::string kVideoPath = "/v1/search/video";
 const std::string kFoundBody = R"({"movie_ids":[603]})";
@@ -39,7 +38,7 @@ const std::vector<std::int64_t> kFound{603};
 class Listener
 {
   public:
-    Listener()
+    explicit Listener(int backlog = 16)
     {
         fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
         if (fd_ < 0)
@@ -52,7 +51,7 @@ class Listener
         address.sin_port = 0;
         socklen_t length = sizeof(address);
         if (::bind(fd_, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
-            ::listen(fd_, 16) != 0 ||
+            ::listen(fd_, backlog) != 0 ||
             ::getsockname(fd_, reinterpret_cast<sockaddr *>(&address), &length) != 0)
         {
             ::close(fd_);
@@ -76,6 +75,8 @@ class Listener
 
     std::string url() const { return "http://127.0.0.1:" + std::to_string(port_); }
 
+    std::uint16_t port() const { return port_; }
+
     // Принять одно ожидающее соединение (-1 - нет); закрывает его вызывающий
     int acceptOne() const { return ::accept(fd_, nullptr, nullptr); }
 
@@ -89,10 +90,81 @@ class Listener
         return static_cast<int>(accepted_.size());
     }
 
+    // Принять соединение и дождаться, пока backend его закроет: читаем всё присланное до EOF.
+    // false - соединения не было или оно не закрылось за timeout
+    bool waitForPeerClose(std::chrono::milliseconds timeout)
+    {
+        if (acceptPending() == 0)
+        {
+            return false;
+        }
+        const int connection = accepted_.front();
+        const auto deadline = SteadyClock::now() + timeout;
+        char buffer[1024];
+        while (SteadyClock::now() < deadline)
+        {
+            pollfd watched{.fd = connection, .events = POLLIN, .revents = 0};
+            if (::poll(&watched, 1, 50) <= 0)
+            {
+                continue;
+            }
+            const ssize_t size = ::recv(connection, buffer, sizeof(buffer), 0);
+            if (size == 0 || (size < 0 && errno != EAGAIN && errno != EINTR))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
   private:
     int fd_ = -1;
     std::uint16_t port_ = 0;
     std::vector<int> accepted_;
+};
+
+// Клиентские сокеты, заполнившие очередь приёма слушателя с backlog 0: дальше ядро молча
+// отбрасывает SYN, и новое соединение к этому порту не устанавливается
+class FilledBacklog
+{
+  public:
+    explicit FilledBacklog(std::uint16_t port)
+    {
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = htons(port);
+        for (int attempt = 0; attempt < 8 && !saturated_; ++attempt)
+        {
+            const int client = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+            if (client < 0)
+            {
+                throw std::runtime_error("socket");
+            }
+            clients_.push_back(client);
+            ::connect(client, reinterpret_cast<sockaddr *>(&address), sizeof(address));
+            pollfd watched{.fd = client, .events = POLLOUT, .revents = 0};
+            saturated_ = ::poll(&watched, 1, 200) == 0;
+        }
+    }
+
+    ~FilledBacklog()
+    {
+        for (const int client : clients_)
+        {
+            ::close(client);
+        }
+    }
+
+    FilledBacklog(const FilledBacklog &) = delete;
+    FilledBacklog &operator=(const FilledBacklog &) = delete;
+
+    // false - ядро принимало все соединения, условие теста не создать
+    bool saturated() const { return saturated_; }
+
+  private:
+    std::vector<int> clients_;
+    bool saturated_ = false;
 };
 
 // ML, у которого /health отвечает через 300 мс, а поиск не отвечает никогда
@@ -281,6 +353,78 @@ TEST_F(MlClientTest, TimesOutOnHungMlWithoutRetry)
     EXPECT_EQ(hung.acceptPending(), 1);
 }
 
+TEST_F(MlClientTest, ClosesConnectionToMlAfterSearchTimeout)
+{
+    Listener hung;
+    config.url = hung.url();
+    config.imageTimeout = 300ms;
+
+    expectError(image(service()), SearchError::Unavailable);
+
+    EXPECT_TRUE(hung.waitForPeerClose(3s));
+}
+
+TEST_F(MlClientTest, ClosesConnectionToMlAfterHealthProbeTimeout)
+{
+    Listener hung;
+    config.url = hung.url();
+    config.failuresToOpen = 1;
+    config.openFor = 0ms;
+    config.imageTimeout = 300ms;
+    const auto ml = service();
+    ml->breaker.onOutage(SteadyClock::now());
+
+    expectError(image(ml), SearchError::Unavailable);
+
+    EXPECT_TRUE(hung.waitForPeerClose(3s));
+    EXPECT_EQ(hung.acceptPending(), 1);  // поиск после зависшего зонда не отправлялся
+}
+
+TEST_F(MlClientTest, GivesUpOnConnectAfterOneSecondAndCountsOutage)
+{
+    Listener full(0);
+    const FilledBacklog filler(full.port());
+    if (!filler.saturated())
+    {
+        GTEST_SKIP() << "ядро принимает все соединения: очередь приёма не заполнить";
+    }
+    config.url = full.url();
+    config.imageTimeout = 6s;
+    config.failuresToOpen = 1;
+    config.openFor = 1h;
+    const auto ml = service();
+
+    const auto start = SteadyClock::now();
+    expectError(image(ml), SearchError::Unavailable);
+    const auto elapsed = SteadyClock::now() - start;
+
+    EXPECT_GE(elapsed, 900ms);
+    EXPECT_LT(elapsed, 3s);  // общий срок 6 с не дожидались
+
+    ml->config.url = fakeUrl;
+    replyImage(k200OK, kFoundBody);
+    expectError(image(ml), SearchError::Unavailable);  // выключатель открыт
+    EXPECT_EQ(fakeReceived(kImagePath), nullptr);
+}
+
+TEST_F(MlClientTest, CountsTimeoutsAsBreakerOutages)
+{
+    Listener hung;
+    config.url = hung.url();
+    config.imageTimeout = 200ms;
+    config.failuresToOpen = 2;
+    config.openFor = 1h;
+    const auto ml = service();
+    expectError(image(ml), SearchError::Unavailable);
+    expectError(image(ml), SearchError::Unavailable);
+    ASSERT_EQ(hung.acceptPending(), 2);
+
+    ml->config.url = fakeUrl;
+    replyImage(k200OK, kFoundBody);
+    expectError(image(ml), SearchError::Unavailable);
+    EXPECT_EQ(fakeReceived(kImagePath), nullptr);
+}
+
 TEST_F(MlClientTest, ReturnsBusyWhenAllSlotsAreTaken)
 {
     replyImage(k200OK, kFoundBody);
@@ -362,6 +506,9 @@ TEST_F(MlClientTest, ProbesHealthAfterBreakerOpenPeriod)
 
     fakeReply("/health", k200OK, "{}");
     expectFound(image(ml));
+    const auto probe = fakeReceived("/health");
+    ASSERT_NE(probe, nullptr);
+    EXPECT_EQ(probe->method(), Get);
 
     fakeReply("/health", k503ServiceUnavailable, "{}");
     expectFound(image(ml));  // breaker closed, no probe
