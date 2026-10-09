@@ -37,6 +37,9 @@ class DbTest : public ::testing::Test
     // Первая ячейка результата строкой ("" - NULL или нет строк): для проверок состояния БД
     std::string scalar(const std::string &sql);
 
+    // Токен из ссылки в последнем письме очереди: ...?token=<токен>
+    std::string lastLinkToken();
+
     // Учётная запись с паролем kPassword, сразу в нужном статусе
     std::int64_t createUser(const std::string &username, const std::string &email,
                             const std::string &status = "active");

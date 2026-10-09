@@ -45,9 +45,36 @@ TEST(RenderEmailTest, ConfirmEmailHasLinkAndName)
     EXPECT_NE(email.body.find("24 часа"), std::string::npos);  // срок ссылки, #17148 п. 2.5
 }
 
+TEST(RenderEmailTest, PasswordResetHasLinkAndExpiry)
+{
+    const Email email = *renderEmail("password_reset", "ivan@example.com", "movie_fan_42",
+                                     "https://dejaview.ru/reset-password?token=abc");
+    EXPECT_EQ(email.to, "ivan@example.com");
+    EXPECT_NE(email.body.find("https://dejaview.ru/reset-password?token=abc"), std::string::npos);
+    EXPECT_NE(email.body.find("movie_fan_42"), std::string::npos);
+    EXPECT_NE(email.body.find("1 час"), std::string::npos);  // срок ссылки, #17150 п. 1.2 шаг 9
+    EXPECT_NE(email.html.find("href=\"https://dejaview.ru/reset-password?token=abc\""),
+              std::string::npos);
+    EXPECT_EQ(email.html.find("{{"), std::string::npos) << "осталась неподставленная переменная";
+}
+
+TEST(RenderEmailTest, PasswordChangedWarnsAndLinksToRecovery)
+{
+    const Email email = *renderEmail("password_changed", "ivan@example.com", "movie_fan_42",
+                                     "https://dejaview.ru/forgot-password");
+    // текст из #17150 п. 2.5
+    EXPECT_NE(email.body.find("Пароль вашей учётной записи DejaView был изменён. Если это были не "
+                              "вы, немедленно восстановите пароль"),
+              std::string::npos)
+        << email.body;
+    EXPECT_NE(email.body.find("https://dejaview.ru/forgot-password"), std::string::npos);
+    EXPECT_NE(email.html.find("href=\"https://dejaview.ru/forgot-password\""), std::string::npos);
+    EXPECT_EQ(email.html.find("{{"), std::string::npos) << "осталась неподставленная переменная";
+}
+
 TEST(RenderEmailTest, UnknownKindHasNoTemplate)
 {
-    EXPECT_EQ(renderEmail("password_reset", "a@b.co", "x", "y"), std::nullopt);
+    EXPECT_EQ(renderEmail("newsletter", "a@b.co", "x", "y"), std::nullopt);
 }
 
 TEST(FormatMessageTest, HasRequiredHeadersAndCrlf)

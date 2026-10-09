@@ -38,14 +38,6 @@ class RegistrationTest : public DbTest
         return run(resendConfirmationHandler(
             db, kAppUrl, request(Post, "/api/v1/auth/resend-confirmation", json)));
     }
-
-    // Токен из ссылки в последнем письме очереди
-    std::string lastLinkToken()
-    {
-        const std::string link =
-            scalar("SELECT payload->>'link' FROM email_outbox ORDER BY email_id DESC LIMIT 1");
-        return link.substr(link.find("token=") + 6);
-    }
 };
 
 TEST_F(RegistrationTest, CreatesUnconfirmedUserWithLinkAndEmail)

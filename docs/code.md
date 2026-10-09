@@ -9,7 +9,7 @@ src/
   error_response.*      тело ошибки Error из контракта
   health.*              GET /health
   background.*          фоновый поток: письма из очереди, очистка устаревшего
-  auth/                 регистрация, вход, сессии, OIDC - docs/auth.md
+  auth/                 регистрация, вход, сессии, пароль, OIDC - docs/auth.md
   email/                письма: шаблоны templates/*.html, формат, отправка из очереди
 tests/                  модульные тесты, раскладка как в src/
 db/migrations/          миграции dbmate
@@ -34,7 +34,7 @@ db/migrations/          миграции dbmate
 - **Интеграционные** - `tests/integration/`: обработчики вызываются напрямую с настоящим PostgreSQL,
   проверяются ответ и строки в таблицах. Класс теста наследует `DbTest` (`db_test.hpp`): перед
   каждым тестом таблицы пустые, миграции из `db/migrations` применяются сами, есть помощники
-  `request`, `run`, `scalar`, `createUser`.
+  `request`, `run`, `scalar`, `createUser`, `lastLinkToken`.
 - БД интеграционных тестов - `TEST_DATABASE_URL`, сервис `postgres-test` из `compose.yaml`:
   `docker compose up -d postgres-test` на компьютере. В Dev Container переменная уже задана. Без неё
   интеграционные тесты пропускаются (Skipped), остальные идут как обычно.

@@ -1,5 +1,6 @@
 #include "auth/login.hpp"
 #include "auth/oidc.hpp"
+#include "auth/password.hpp"
 #include "auth/registration.hpp"
 #include "auth/session.hpp"
 #include "background.hpp"
@@ -106,6 +107,8 @@ int main()
                          [db, captcha = CaptchaSettings{.serverKey = config.smartCaptchaServerKey}](
                              HttpRequestPtr req) { return loginHandler(db, captcha, req); },
                          {Post})
+        .registerHandler("/api/v1/auth/logout",
+                         [db](HttpRequestPtr req) { return logoutHandler(db, req); }, {Post})
         .registerHandler("/api/v1/auth/resend-confirmation",
                          [db, appUrl = config.appUrl](HttpRequestPtr req)
                          { return resendConfirmationHandler(db, appUrl, req); }, {Post})
@@ -119,5 +122,16 @@ int main()
                          [db](HttpRequestPtr req) { return oidcPendingHandler(db, req); }, {Get})
         .registerHandler("/api/v1/auth/oidc/complete",
                          [db](HttpRequestPtr req) { return oidcCompleteHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/auth/password-reset/request",
+                         [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return requestPasswordResetHandler(db, appUrl, req); }, {Post})
+        .registerHandler("/api/v1/auth/password-reset/check", [db](HttpRequestPtr req)
+                         { return checkPasswordResetHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/auth/password-reset/complete",
+                         [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return completePasswordResetHandler(db, appUrl, req); }, {Post})
+        .registerHandler("/api/v1/users/me/password",
+                         [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return changePasswordHandler(db, appUrl, req); }, {Put})
         .run();
 }

@@ -58,6 +58,11 @@ void clearStaleSessionCookie(const drogon::HttpRequestPtr &req,
 drogon::Task<drogon::HttpResponsePtr> getSessionHandler(drogon::orm::DbClientPtr db,
                                                         drogon::HttpRequestPtr req);
 
+// POST /auth/logout (#17151): удаляет сессию из cookie и стирает cookie, другие сессии
+// пользоват–еля остаются. Без сессии - 401: клиент считает это успешным выходом.
+drogon::Task<drogon::HttpResponsePtr> logoutHandler(drogon::orm::DbClientPtr db,
+                                                    drogon::HttpRequestPtr req);
+
 // Cookie dv_session: HttpOnly; Secure; SameSite=Lax; Path=/api/v1; Max-Age=86400.
 drogon::Cookie sessionCookie(const std::string &token);
 // Стирает dv_session у браузера: Max-Age=0.

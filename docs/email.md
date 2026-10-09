@@ -58,24 +58,25 @@ Gmail - так же: `smtps://smtp.gmail.com:465`, пароль приложен
 
 ## HTML-шаблон
 
-Шаблон - `src/email/templates/email_confirm.html`, его можно открыть в браузере. Подстановки
-`{{username}}` и `{{link}}`, значения экранируются для HTML. CMake встраивает файл в программу при
-сборке: после правки достаточно `cmake --build build`.
+Шаблоны - `src/email/templates/<вид>.html`: `email_confirm.html`, `password_reset.html`,
+`password_changed.html`. Их можно открыть в браузере. Подстановки `{{username}}` и `{{link}}`, значения экранируются для HTML. CMake
+встраивает файлы в программу при сборке: после правки достаточно `cmake --build build`.
 
-Правила вёрстки писем - в комментарии в начале шаблона: таблицы вместо flex и grid, стили только
-в `style="..."`, без скриптов, веб-шрифтов и внешних картинок, ширина 600px. Outlook для Windows
-не понимает `border-radius` и `max-width` - там карточка будет с прямыми углами и во всю ширину.
+Правила вёрстки писем - в комментарии в начале `email_confirm.html`: таблицы вместо flex и grid,
+стили только в `style="..."`, без скриптов, веб-шрифтов и внешних картинок, ширина 600px. Outlook
+для Windows не понимает `border-radius` и `max-width` - там карточка будет с прямыми углами и во
+всю ширину.
 
 Текстовая версия письма (её показывают клиенты без HTML) - в `renderEmail`,
 `src/email/message.cpp`: меняется вместе с шаблоном.
 
 ## Новый вид письма
 
-`password_reset` и `password_changed` (#17150, Sprint 2) уже разрешены в `email_outbox.kind`.
-Чтобы добавить письмо:
+Допустимые виды перечислены в `CHECK` колонки `email_outbox.kind`: вид, которого там нет,
+добавляется миграцией. Чтобы добавить письмо:
 1. Шаблон `src/email/templates/<вид>.html`.
-2. В `CMakeLists.txt` - чтение файла рядом с `EMAIL_CONFIRM_TEMPLATE`, в
-   `src/email/templates.cpp.in` и `templates.hpp` - новая константа.
+2. В `CMakeLists.txt` - вид в списке `foreach(EMAIL_KIND ...)`, в `src/email/templates.cpp.in` и
+   `templates.hpp` - константа `k<Вид>Html`.
 3. В `renderEmail` - ветка для вида: тема, текст, HTML.
 4. Обработчик кладёт письмо: `INSERT INTO email_outbox (user_id, kind, payload)`, в `payload` -
    ссылка и другие параметры шаблона.

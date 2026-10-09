@@ -12,11 +12,14 @@ find_package(libsodium CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 
 # HTML-шаблоны писем встраиваются в программу: CMake вставляет содержимое файла в строковый
-# литерал R"html(...)html" (src/email/templates.cpp.in). CMAKE_CONFIGURE_DEPENDS - правка
-# шаблона сама перезапускает cmake при следующей сборке
-set(EMAIL_CONFIRM_TEMPLATE ${CMAKE_SOURCE_DIR}/src/email/templates/email_confirm.html)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${EMAIL_CONFIRM_TEMPLATE})
-file(READ ${EMAIL_CONFIRM_TEMPLATE} EMAIL_CONFIRM_HTML)
+# литерал R"html(...)html" (src/email/templates.cpp.in). Шаблон <вид>.html попадает в переменную
+# <ВИД>_HTML. CMAKE_CONFIGURE_DEPENDS - правка шаблона сама перезапускает cmake при следующей сборке
+foreach(EMAIL_KIND email_confirm password_reset password_changed)
+    set(EMAIL_TEMPLATE ${CMAKE_SOURCE_DIR}/src/email/templates/${EMAIL_KIND}.html)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${EMAIL_TEMPLATE})
+    string(TOUPPER ${EMAIL_KIND}_HTML EMAIL_TEMPLATE_VARIABLE)
+    file(READ ${EMAIL_TEMPLATE} ${EMAIL_TEMPLATE_VARIABLE})
+endforeach()
 configure_file(src/email/templates.cpp.in ${CMAKE_BINARY_DIR}/generated/email_templates.cpp
                @ONLY)
 
@@ -36,6 +39,8 @@ add_library(dejaview-core STATIC
     src/auth/login_rules.cpp
     src/auth/oidc.cpp
     src/auth/oidc_profile.cpp
+    src/auth/password.cpp
+    src/auth/password_rules.cpp
     src/auth/registration.cpp
     src/auth/security_log.cpp
     src/auth/session.cpp
@@ -55,6 +60,7 @@ add_executable(dejaview-tests
     tests/auth/crypto_test.cpp
     tests/auth/login_rules_test.cpp
     tests/auth/oidc_profile_test.cpp
+    tests/auth/password_rules_test.cpp
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp
@@ -64,6 +70,7 @@ add_executable(dejaview-tests
     tests/integration/guest_test.cpp
     tests/integration/login_test.cpp
     tests/integration/oidc_test.cpp
+    tests/integration/password_test.cpp
     tests/integration/registration_test.cpp)
 target_include_directories(dejaview-tests PRIVATE tests)
 # миграции интеграционные тесты применяют сами - через libpq, как dbmate

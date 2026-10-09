@@ -3,3 +3,5 @@
 #include "email/templates.hpp"
 
 const std::string_view kEmailConfirmHtml = R"html(@EMAIL_CONFIRM_HTML@)html";
+const std::string_view kPasswordResetHtml = R"html(@PASSWORD_RESET_HTML@)html";
+const std::string_view kPasswordChangedHtml = R"html(@PASSWORD_CHANGED_HTML@)html";

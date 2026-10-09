@@ -1,0 +1,24 @@
+meta {
+  name: Выход
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/logout
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: dv_session={{session}}
+}
+
+assert {
+  res.status: eq 204
+}
+
+docs {
+  Завершает только эту сессию: на других устройствах пользователь остаётся. В ответе cookie
+  стирается (`Max-Age=0`). Повторный выход - 401: клиент считает его тоже выходом.
+}

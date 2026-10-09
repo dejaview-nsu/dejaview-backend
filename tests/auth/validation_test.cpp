@@ -221,6 +221,22 @@ TEST(ValidatePasswordTest, RequiresSpecialCharacter)
     EXPECT_EQ(messageOf(validatePassword("Kino2026")), kPasswordSpecial);
 }
 
+// Формы #17150: те же правила, другое поле и текст пустого значения
+TEST(ValidateNewPasswordTest, SameRulesOwnFieldAndEmptyText)
+{
+    EXPECT_EQ(validateNewPassword("Kino#2027"), std::nullopt);
+    EXPECT_EQ(messageOf(validateNewPassword("")), "Введите новый пароль");
+    EXPECT_EQ(messageOf(validateNewPassword("Kino2026")), kPasswordSpecial);
+    for (const char *password : {"", "short", "Kino2026"})
+    {
+        SCOPED_TRACE(password);
+        const auto error = validateNewPassword(password);
+        ASSERT_TRUE(error);
+        EXPECT_EQ(error->code, "AUTH_VALIDATION_ERROR");
+        EXPECT_EQ(error->field, "new_password");
+    }
+}
+
 // --- Логин: имя пользователя или email ---
 
 TEST(ValidateLoginTest, AcceptsUsernameAndEmail)
