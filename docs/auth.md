@@ -87,6 +87,7 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 | `POST /auth/login` | `src/auth/login.cpp`, правила подбора - `login_rules.cpp`, CAPTCHA - `captcha.cpp` |
 | `GET /auth/session`, `POST /auth/logout` | `src/auth/session.cpp` |
 | `GET /auth/oidc/{provider}/start`, `/callback`, `GET /auth/oidc/pending`, `POST /auth/oidc/complete` | `src/auth/oidc.cpp`, разбор профилей - `oidc_profile.cpp` |
+| `POST /auth/password-reset/request`, `/auth/password-reset/check` | `src/auth/password.cpp` |
 
 Общее: `validation.cpp` - правила полей, `crypto.cpp` - Argon2id, токены, SHA-256, PKCE,
 `security_log.cpp` - журнал безопасности, `http_common.cpp` - разбор тела и типовые ответы.
@@ -120,6 +121,11 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
   паролем. Email, не подтверждённый провайдером, не принимается. Учётная запись создаётся на шаге
   «Завершение регистрации» с годом рождения, до этого данные ждут в `oidc_pending` 30 минут.
   Провайдеры - таблица `kProviders` в `oidc.cpp`.
+- **Запрос сброса пароля не раскрывает учётные записи.** Ответ всегда 202 без тела: поиск
+  учётной записи, ссылка и письмо - один SQL-запрос, отправку SMTP ответ не ждёт. Новое письмо -
+  не чаще раза в 60 с на учётную запись, как у повторной отправки подтверждения: иначе запросами
+  можно завалить чужой ящик. Ранний повтор ничего не меняет, прежняя ссылка действует.
+  Заблокированной учётной записи письмо не уходит, а её ссылка, отправленная до блокировки, - 410.
 - **Очистка** раз в час: истёкшие сессии и `oidc_pending`, ссылки из писем через 7 дней после
   истечения (по ним работает «Отправить новую ссылку»), журнал старше 30 дней (#17094 п. 5.2),
   неотправленные письма старше суток.

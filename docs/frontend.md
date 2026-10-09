@@ -7,10 +7,11 @@
 ## Что готово
 
 Регистрация, подтверждение email, повторная отправка письма, вход по паролю с CAPTCHA и
-блокировкой, текущая сессия, выход, вход и регистрация через Яндекс, Google и VK ID.
+блокировкой, текущая сессия, выход, вход и регистрация через Яндекс, Google и VK ID, запрос
+восстановления пароля и проверка ссылки из письма.
 
-В контракте есть, но пока не сделано (backend отвечает 404): восстановление пароля
-`/auth/password-reset/*` (#17150), смена пароля `/users/me/password`.
+В контракте есть, но пока не сделано (backend отвечает 404): установка нового пароля по ссылке
+`POST /auth/password-reset/complete` (#17150), смена пароля `PUT /users/me/password`.
 
 ## Как ходить в API
 
@@ -52,6 +53,8 @@
 | Регистрация | `POST /auth/register` | 201 → экран «Проверьте почту» с таймером `resend_after` секунд; 409 - email или имя заняты |
 | «Проверьте почту» | `POST /auth/resend-confirmation` с `login` | 202 с `resend_after` и для несуществующего адреса: есть ли он, не раскрывается |
 | `/confirm-email?token=...` - ссылка из письма | `POST /auth/confirm-email` с `token` | 200 - сессия создана, пользователь вошёл; 410 - ссылка истекла или уже использована → «Отправить новую ссылку»: `resend-confirmation` с тем же `token` |
+| Вход → «Забыли пароль?» | `POST /auth/password-reset/request` с `login` | 202 всегда, есть учётная запись или нет → «Если учётная запись с таким email существует, мы отправили ссылку...»; 400 - ошибка поля `login`. Новое письмо - не чаще раза в 60 с, повтор раньше ничего не отправит: кнопку можно блокировать на минуту |
+| `/reset-password?token=...` - ссылка из письма, маршрут задаёт backend | `POST /auth/password-reset/check` с `token` | 204 → форма «Новый пароль»; 410 `AUTH_RESET_LINK_EXPIRED` - ссылка истекла, заменена новой или использована → сообщение из ответа и кнопка «Запросить повторно» → форма запроса |
 | Вход | `POST /auth/login` | `captcha_required: true` или 403 `AUTH_CAPTCHA_REQUIRED` → виджет CAPTCHA, затем та же форма с `captcha_token`; 429 - блокировка, через сколько секунд - заголовок `Retry-After`; 403 `AUTH_EMAIL_NOT_CONFIRMED` → «Отправить новую ссылку» с тем же `login` |
 | `/auth/oidc?provider=...&result=...` - возврат от провайдера | по `result` | `success` - вошёл; `registration_required` → `GET /auth/oidc/pending` → форма с `suggested_username` и годом рождения → `POST /auth/oidc/complete`; `link_required` → `pending` даёт `email` → обычный вход с паролем, провайдер привяжется сам; `account_blocked`, `error` - сообщение. 410 `AUTH_OIDC_EXPIRED` - 30 минут прошли, войти заново |
 
@@ -109,7 +112,9 @@ backend выключена: `captcha_required` всегда `false`, работ�
 | Что проверить | Как получить |
 |---|---|
 | Письмо и ссылка подтверждения | зарегистрироваться, письмо - в Mailpit |
-| Истёкшая ссылка | `UPDATE auth_tokens SET created_at = now() - interval '25 hours', expires_at = now() - interval '1 hour';` |
+| Истёкшая ссылка подтверждения | `UPDATE auth_tokens SET created_at = now() - interval '25 hours', expires_at = now() - interval '1 hour' WHERE purpose = 'email_confirm';` |
+| Письмо и ссылка сброса пароля | «Забыли пароль?» с именем или email существующего пользователя, письмо - в Mailpit |
+| Истёкшая ссылка сброса | `UPDATE auth_tokens SET created_at = now() - interval '2 hours', expires_at = now() - interval '1 hour' WHERE purpose = 'password_reset';` |
 | Вход до подтверждения email | зарегистрироваться и не переходить по ссылке |
 | CAPTCHA | ключи в `.env` backend и frontend, 3 неверных пароля подряд |
 | Блокировка входа | 5 неверных паролей подряд; снять: `UPDATE users SET failed_login_count = 0, locked_until = NULL;` |

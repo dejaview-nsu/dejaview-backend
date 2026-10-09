@@ -34,7 +34,7 @@ db/migrations/          миграции dbmate
 - **Интеграционные** - `tests/integration/`: обработчики вызываются напрямую с настоящим PostgreSQL,
   проверяются ответ и строки в таблицах. Класс теста наследует `DbTest` (`db_test.hpp`): перед
   каждым тестом таблицы пустые, миграции из `db/migrations` применяются сами, есть помощники
-  `request`, `run`, `scalar`, `createUser`.
+  `request`, `run`, `scalar`, `createUser`, `lastLinkToken`.
 - БД интеграционных тестов - `TEST_DATABASE_URL`, сервис `postgres-test` из `compose.yaml`:
   `docker compose up -d postgres-test` на компьютере. В Dev Container переменная уже задана. Без неё
   интеграционные тесты пропускаются (Skipped), остальные идут как обычно.

@@ -1,5 +1,6 @@
 #include "auth/login.hpp"
 #include "auth/oidc.hpp"
+#include "auth/password.hpp"
 #include "auth/registration.hpp"
 #include "auth/session.hpp"
 #include "background.hpp"
@@ -121,5 +122,10 @@ int main()
                          [db](HttpRequestPtr req) { return oidcPendingHandler(db, req); }, {Get})
         .registerHandler("/api/v1/auth/oidc/complete",
                          [db](HttpRequestPtr req) { return oidcCompleteHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/auth/password-reset/request",
+                         [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return requestPasswordResetHandler(db, appUrl, req); }, {Post})
+        .registerHandler("/api/v1/auth/password-reset/check", [db](HttpRequestPtr req)
+                         { return checkPasswordResetHandler(db, req); }, {Post})
         .run();
 }

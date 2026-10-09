@@ -193,6 +193,13 @@ std::string DbTest::scalar(const std::string &sql)
     return result.empty() || result[0][0].isNull() ? "" : result[0][0].as<std::string>();
 }
 
+std::string DbTest::lastLinkToken()
+{
+    const std::string link =
+        scalar("SELECT payload->>'link' FROM email_outbox ORDER BY email_id DESC LIMIT 1");
+    return link.substr(link.find("token=") + 6);
+}
+
 std::int64_t DbTest::createUser(const std::string &username, const std::string &email,
                                 const std::string &status)
 {

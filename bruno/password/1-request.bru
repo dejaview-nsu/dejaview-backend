@@ -1,0 +1,26 @@
+meta {
+  name: Запрос сброса пароля
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/password-reset/request
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "login": "{{email}}"
+  }
+}
+
+assert {
+  res.status: eq 202
+}
+
+docs {
+  Пользователь - из папки auth (переменная `email`): сначала прогнать её. Ответ 202 и для
+  несуществующего адреса. Новое письмо - не чаще раза в 60 с: повтор раньше ничего не отправит.
+}

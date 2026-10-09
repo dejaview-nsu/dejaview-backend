@@ -38,12 +38,12 @@ TEST_F(BackgroundTest, GivesUpAfterLastAttemptOrWithoutTemplate)
     createUser("ivan", "ivan@example.com");
     queueEmail();
     db->execSqlSync("UPDATE email_outbox SET attempts = 7");  // осталась последняя попытка
-    queueEmail("password_reset");                             // шаблона пока нет (Sprint 2)
+    queueEmail("password_changed");                           // шаблона пока нет (#17150)
     sendPendingEmails(db, deadSmtp);
 
     EXPECT_EQ(
         scalar("SELECT string_agg(kind || ' ' || status, ', ' ORDER BY kind) FROM email_outbox"),
-        "email_confirm failed, password_reset failed");
+        "email_confirm failed, password_changed failed");
 }
 
 TEST_F(BackgroundTest, DeleteExpiredKeepsFreshRows)

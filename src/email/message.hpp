@@ -15,8 +15,8 @@ struct Email
     std::string html;  // HTML-версия из src/email/templates; пустая - письмо только текстом
 };
 
-// Письмо по виду из email_outbox.kind. Шаблон пока один - email_confirm (#17148 п. 2.5):
-// password_reset и password_changed появятся вместе с #17150 в Sprint 2. Другой вид - nullopt.
+// Письмо по виду из email_outbox.kind: email_confirm (#17148 п. 2.5), password_reset (#17150
+// п. 1.2). Другой вид - nullopt.
 std::optional<Email> renderEmail(std::string_view kind, std::string_view to,
                                  std::string_view username, std::string_view link);
 
