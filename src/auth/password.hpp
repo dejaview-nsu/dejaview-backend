@@ -7,8 +7,8 @@
 
 #include <string>
 
-// Восстановление пароля по ссылке из письма (#17150), тег Password в api/openapi.yaml. Ссылка
-// ведёт на страницу SPA {appUrl}/reset-password?token=...: живёт 1 ч, действует только последняя.
+// Восстановление и смена пароля (#17150), тег Password в api/openapi.yaml. Ссылка из письма ведёт
+// на страницу SPA {appUrl}/reset-password?token=...: живёт 1 ч, действует только последняя.
 
 // POST /auth/password-reset/request: всегда 202 без тела, есть учётная запись или нет. Если есть
 // и не заблокирована - новая ссылка и письмо в очереди, но не чаще раза в 60 с.
@@ -26,3 +26,9 @@ drogon::Task<drogon::HttpResponsePtr> checkPasswordResetHandler(drogon::orm::DbC
 drogon::Task<drogon::HttpResponsePtr> completePasswordResetHandler(drogon::orm::DbClientPtr db,
                                                                    std::string appUrl,
                                                                    drogon::HttpRequestPtr req);
+
+// PUT /users/me/password (#17150 п. 3): смена пароля с проверкой текущего, а у учётной записи без
+// пароля (OIDC) - первый пароль. Успех - 204, сессии, кроме текущей, завершены, письмо в очереди.
+drogon::Task<drogon::HttpResponsePtr> changePasswordHandler(drogon::orm::DbClientPtr db,
+                                                            std::string appUrl,
+                                                            drogon::HttpRequestPtr req);

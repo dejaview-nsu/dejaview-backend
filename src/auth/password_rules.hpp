@@ -13,3 +13,12 @@
 // текущим.
 std::optional<FieldError> checkResetPassword(std::string_view newPassword,
                                              const std::optional<std::string> &currentHash);
+
+// Смена пароля из профиля (#17150 п. 3.2) в порядке полей формы: текущий пароль, затем новый.
+// Без пароля (учётная запись из OIDC) текущий не нужен - операция задаёт пароль (п. 3.1).
+std::optional<FieldError> checkPasswordChange(std::string_view currentPassword,
+                                              std::string_view newPassword,
+                                              const std::optional<std::string> &currentHash);
+
+// «Неверный текущий пароль»: и при неверном вводе, и если пароль успели сменить параллельно.
+FieldError currentPasswordInvalid();

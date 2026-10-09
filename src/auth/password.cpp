@@ -151,3 +151,62 @@ Task<HttpResponsePtr> completePasswordResetHandler(orm::DbClientPtr db, std::str
     co_await logSecurityEvent(db, "login_success", userId, req, details);
     co_return co_await startSession(db, req, userId);
 }
+
+Task<HttpResponsePtr> changePasswordHandler(orm::DbClientPtr db, std::string appUrl,
+                                            HttpRequestPtr req)
+{
+    const auto user = co_await requireSession(db, req);
+    if (!user)
+    {
+        co_return user.error();
+    }
+    const Json::Value *json = jsonBody(req);
+    if (!json)
+    {
+        co_return malformedBody();
+    }
+    const std::string currentPassword = stringField(*json, "current_password");
+    const std::string newPassword = stringField(*json, "new_password");
+
+    // .at, а не []: строки нет, только если пользователя удалили сразу после проверки сессии
+    const auto found = co_await db->execSqlCoro(
+        "SELECT password_hash FROM users WHERE user_id = $1", user->userId);
+    const auto &row = found.at(0);
+    const auto currentHash = row["password_hash"].isNull()
+                                 ? std::nullopt
+                                 : std::optional(row["password_hash"].as<std::string>());
+    if (const auto error = checkPasswordChange(currentPassword, newPassword, currentHash))
+    {
+        // Неверный текущий пароль - неудачная повторная аутентификация (#17094 п. 5.1)
+        if (error->code == "AUTH_CURRENT_PASSWORD_INVALID")
+        {
+            Json::Value details;
+            details["method"] = "password_change";
+            details["reason"] = "invalid_credentials";
+            co_await logSecurityEvent(db, "login_failure", user->userId, req, details);
+        }
+        co_return fieldErrorResponse(*error);
+    }
+
+    // Пароль меняется, только если он всё ещё тот, что проверен выше (compare-and-swap): иначе
+    // запрос, начатый до сброса пароля, перезаписал бы новый. Сессии, кроме текущей, завершаются
+    const auto changed = co_await db->execSqlCoro(
+        "WITH u AS (UPDATE users SET password_hash = $2 WHERE user_id = $1 "
+        "AND password_hash IS NOT DISTINCT FROM $3 RETURNING user_id), "
+        "s AS (DELETE FROM sessions WHERE user_id IN (SELECT user_id FROM u) "
+        "AND token_hash <> decode($4, 'hex')), "
+        "o AS (INSERT INTO email_outbox (user_id, kind, payload) "
+        "SELECT user_id, 'password_changed', $5::jsonb FROM u) "
+        "SELECT user_id FROM u",
+        user->userId, hashPassword(newPassword), currentHash,
+        tokenHash(req->getCookie("dv_session")), passwordChangedPayload(appUrl));
+    if (changed.empty())
+    {
+        co_return fieldErrorResponse(currentPasswordInvalid());
+    }
+
+    Json::Value details;
+    details["method"] = "password_change";
+    co_await logSecurityEvent(db, "password_change", user->userId, req, details);
+    co_return HttpResponse::newHttpResponse(k204NoContent, CT_NONE);
+}

@@ -8,6 +8,14 @@ using namespace drogon;
 namespace
 {
 constexpr const char *kAppUrl = "https://dejaview.ru";
+
+Json::Value passwords(const std::string &current, const std::string &newPassword)
+{
+    Json::Value json;
+    json["current_password"] = current;
+    json["new_password"] = newPassword;
+    return json;
+}
 }  // namespace
 
 class PasswordTest : public DbTest
@@ -44,6 +52,13 @@ class PasswordTest : public DbTest
         json["login"] = login;
         json["password"] = password;
         return run(loginHandler(db, {}, request(Post, "/api/v1/auth/login", json)));
+    }
+
+    HttpResponsePtr changePassword(const std::string &session, const Json::Value &json)
+    {
+        return run(changePasswordHandler(
+            db, kAppUrl,
+            request(Put, "/api/v1/users/me/password", json, {{"dv_session", session}})));
     }
 
     HttpStatusCode sessionStatus(const std::string &token)
@@ -217,4 +232,66 @@ TEST_F(PasswordTest, BlockedAccountCannotCompleteReset)
     EXPECT_EQ(response->statusCode(), k410Gone);
     EXPECT_EQ(body(response)["code"].asString(), "AUTH_RESET_LINK_EXPIRED");
     EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox WHERE kind = 'password_changed'"), "0");
+}
+
+TEST_F(PasswordTest, ChangeEndsOtherSessionsButKeepsCurrent)
+{
+    createUser("ivan", "ivan@example.com");
+    const std::string phone = login("ivan", kPassword)->getCookie("dv_session").value();
+    const std::string laptop = login("ivan", kPassword)->getCookie("dv_session").value();
+
+    EXPECT_EQ(changePassword(phone, passwords(kPassword, "Nova#2027"))->statusCode(),
+              k204NoContent);
+    EXPECT_EQ(sessionStatus(phone), k200OK);
+    EXPECT_EQ(sessionStatus(laptop), k401Unauthorized);
+    EXPECT_EQ(login("ivan", kPassword)->statusCode(), k400BadRequest);
+    EXPECT_EQ(login("ivan", "Nova#2027")->statusCode(), k200OK);
+
+    EXPECT_EQ(scalar("SELECT payload->>'link' FROM email_outbox WHERE kind = 'password_changed'"),
+              "https://dejaview.ru/forgot-password");
+    EXPECT_EQ(scalar("SELECT details->>'method' FROM security_events "
+                     "WHERE event_type = 'password_change'"),
+              "password_change");
+}
+
+TEST_F(PasswordTest, ChangeRequiresCurrentPassword)
+{
+    createUser("ivan", "ivan@example.com");
+    const std::string session = login("ivan", kPassword)->getCookie("dv_session").value();
+
+    const auto wrong = changePassword(session, passwords("Wrong#2026", "Nova#2027"));
+    EXPECT_EQ(wrong->statusCode(), k400BadRequest);
+    EXPECT_EQ(body(wrong)["code"].asString(), "AUTH_CURRENT_PASSWORD_INVALID");
+    EXPECT_EQ(body(wrong)["field"].asString(), "current_password");
+    // неверный текущий пароль - неудачная аутентификация, её видно в журнале
+    EXPECT_EQ(scalar("SELECT details->>'method' FROM security_events "
+                     "WHERE event_type = 'login_failure'"),
+              "password_change");
+
+    EXPECT_EQ(body(changePassword(session, passwords("", "Nova#2027")))["message"].asString(),
+              "Введите текущий пароль");
+    EXPECT_EQ(body(changePassword(session, passwords(kPassword, kPassword)))["code"].asString(),
+              "AUTH_PASSWORD_SAME_AS_CURRENT");
+    EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox"), "0");  // пароль не менялся
+    EXPECT_EQ(changePassword("", passwords(kPassword, "Nova#2027"))->statusCode(),
+              k401Unauthorized);
+}
+
+TEST_F(PasswordTest, OidcAccountSetsPasswordWithoutCurrentOne)
+{
+    db->execSqlSync(
+        "INSERT INTO users (username, email, birth_year, status) "
+        "VALUES ('ivan', 'ivan@example.com', 2000, 'active')");
+    db->execSqlSync(
+        "INSERT INTO sessions (token_hash, user_id, expires_at) "
+        "SELECT sha256('oidc-session'), user_id, now() + interval '1 hour' FROM users");
+
+    Json::Value json;
+    json["new_password"] = "Nova#2027";  // поля «Текущий пароль» у такой учётной записи нет
+    EXPECT_EQ(changePassword("oidc-session", json)->statusCode(), k204NoContent);
+
+    const auto session = run(getSessionHandler(
+        db, request(Get, "/api/v1/auth/session", Json::Value(), {{"dv_session", "oidc-session"}})));
+    EXPECT_TRUE(body(session)["user"]["has_password"].asBool());
+    EXPECT_EQ(login("ivan", "Nova#2027")->statusCode(), k200OK);
 }

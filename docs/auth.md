@@ -1,9 +1,9 @@
 # Авторизация
 
 Регистрация с подтверждением email, вход по паролю с защитой от подбора и CAPTCHA, серверные
-сессии и выход, вход через Яндекс, Google и VK ID, письма через очередь (#17826, #17151).
-Контракт - теги Auth и OIDC в `dejaview-docs/api/openapi.yaml`, таблицы -
-`dejaview-docs/contracts/db-schema.md`. Восстановление и смена пароля (#17150) - в работе (#17976).
+сессии и выход, восстановление и смена пароля, вход через Яндекс, Google и VK ID, письма через
+очередь (#17826, #17976). Контракт - теги Auth, Password и OIDC в `dejaview-docs/api/openapi.yaml`,
+таблицы - `dejaview-docs/contracts/db-schema.md`.
 
 ## Защита эндпоинта сессией
 
@@ -87,7 +87,7 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 | `POST /auth/login` | `src/auth/login.cpp`, правила подбора - `login_rules.cpp`, CAPTCHA - `captcha.cpp` |
 | `GET /auth/session`, `POST /auth/logout` | `src/auth/session.cpp` |
 | `GET /auth/oidc/{provider}/start`, `/callback`, `GET /auth/oidc/pending`, `POST /auth/oidc/complete` | `src/auth/oidc.cpp`, разбор профилей - `oidc_profile.cpp` |
-| `POST /auth/password-reset/request`, `/check`, `/complete` | `src/auth/password.cpp`, правила - `password_rules.cpp` |
+| `POST /auth/password-reset/request`, `/check`, `/complete`, `PUT /users/me/password` | `src/auth/password.cpp`, правила - `password_rules.cpp` |
 
 Общее: `validation.cpp` - правила полей, `crypto.cpp` - Argon2id, токены, SHA-256, PKCE,
 `security_log.cpp` - журнал безопасности, `http_common.cpp` - разбор тела и типовые ответы.
@@ -131,6 +131,11 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
   ссылка удаляется, пароль меняется, все сессии пользователя удаляются, письмо «Пароль изменён»
   встаёт в очередь. Ссылку, израсходованную параллельным запросом, он не найдёт - 410. Сброс
   подтверждает email и, как успешный вход, обнуляет счётчик подбора.
+- **Смена пароля из профиля - повторная аутентификация.** Текущий пароль проверяется заново, а
+  неверный пишется в журнал как `login_failure` (`method: password_change`): подбор с украденной
+  сессией виден в мониторинге. Пароль меняется, только если его хеш не изменился с момента
+  проверки (compare-and-swap в `WHERE`): запрос, начатый до сброса пароля, не перезапишет новый.
+  Завершаются все сессии, кроме текущей.
 - **Очистка** раз в час: истёкшие сессии и `oidc_pending`, ссылки из писем через 7 дней после
   истечения (по ним работает «Отправить новую ссылку»), журнал старше 30 дней (#17094 п. 5.2),
   неотправленные письма старше суток.
