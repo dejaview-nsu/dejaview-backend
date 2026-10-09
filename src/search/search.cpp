@@ -40,7 +40,8 @@ Task<Json::Value> movieCard(orm::DbClientPtr db, std::int64_t movieId, std::stri
     Json::Value results(Json::arrayValue);
     if (rows.empty())
     {
-        LOG_WARN << "поиск: фильма " << movieId << " нет в movies, X-Request-Id " << requestId;
+        LOG_WARN << "поиск: фильма " << movieId << " нет в movies [X-Request-Id " << requestId
+                 << "]";
         co_return results;
     }
     const auto &row = rows.front();

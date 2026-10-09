@@ -26,8 +26,8 @@ namespace
 using SteadyClock = std::chrono::steady_clock;
 using Result = std::expected<std::vector<std::int64_t>, SearchError>;
 
-const std::string kPng = "image-bytes";
-const std::string kWebm = "video-bytes";
+const std::string kImageBytes = "image-bytes";
+const std::string kVideoBytes = "video-bytes";
 const std::string kImagePath = "/v1/search/image";
 const std::string kVideoPath = "/v1/search/video";
 const std::string kFoundBody = R"({"movie_ids":[603]})";
@@ -243,12 +243,12 @@ class MlClientTest : public DbTest
 
     static Result image(const std::shared_ptr<MlService> &ml, std::string requestId = "req-1")
     {
-        return run(searchMl(ml, MediaKind::Image, "image/png", kPng, std::move(requestId)));
+        return run(searchMl(ml, MediaKind::Image, "image/png", kImageBytes, std::move(requestId)));
     }
 
     static Result video(const std::shared_ptr<MlService> &ml)
     {
-        return run(searchMl(ml, MediaKind::Video, "video/webm", kWebm, "req-1"));
+        return run(searchMl(ml, MediaKind::Video, "video/webm", kVideoBytes, "req-1"));
     }
 
     static void expectError(const Result &result, SearchError error)
@@ -285,7 +285,7 @@ TEST_F(MlClientTest, SendsRawBytesWithDetectedTypeAndRequestId)
     EXPECT_EQ(received->method(), Post);
     EXPECT_EQ(received->getHeader("content-type"), "image/png");
     EXPECT_EQ(received->getHeader("x-request-id"), "req-1");
-    EXPECT_EQ(std::string(received->body()), kPng);
+    EXPECT_EQ(std::string(received->body()), kImageBytes);
 }
 
 TEST_F(MlClientTest, SendsVideoToVideoEndpoint)
@@ -296,7 +296,7 @@ TEST_F(MlClientTest, SendsVideoToVideoEndpoint)
     const auto received = fakeReceived(kVideoPath);
     ASSERT_NE(received, nullptr);
     EXPECT_EQ(received->getHeader("content-type"), "video/webm");
-    EXPECT_EQ(std::string(received->body()), kWebm);
+    EXPECT_EQ(std::string(received->body()), kVideoBytes);
     EXPECT_EQ(fakeReceived(kImagePath), nullptr);
 }
 
@@ -550,5 +550,5 @@ TEST_F(MlClientTest, CompletesWhenCallerGivesUpTheOnlyOwner)
 {
     replyImage(k200OK, kFoundBody);
     expectFound(run(searchMl(std::make_shared<MlService>(config), MediaKind::Image, "image/png",
-                             kPng, "req-1")));
+                             kImageBytes, "req-1")));
 }
