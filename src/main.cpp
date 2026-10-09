@@ -6,6 +6,7 @@
 #include "config.hpp"
 #include "error_response.hpp"
 #include "health.hpp"
+#include "search/search.hpp"
 
 #include <drogon/drogon.h>
 
@@ -54,6 +55,9 @@ int main()
     // Письма из очереди и очистка устаревшего
     const auto backgroundJobs = startBackgroundJobs(db, config.smtp);
 
+    // Лимит ML и выключатель - на экземпляр, общие для обоих маршрутов поиска
+    const auto ml = std::make_shared<MlService>(config.ml);
+
     LOG_INFO << "dejaview-backend слушает порт " << config.port;
 
     app()
@@ -66,6 +70,7 @@ int main()
         // загруженные пользователями: корень статики, которого нет, даёт 404 на любой другой путь
         .setDocumentRoot("/nonexistent")
         .setUploadPath("/tmp/dejaview-uploads")
+        .setClientMaxBodySize(kMaxSearchBodyBytes)
         .setExceptionHandler(exceptionHandler)
         // 404, 405 и другие ошибки фреймворка - JSON Error вместо HTML-страницы с версией Drogon
         // Сессия из cookie определяется один раз до обработчика (requireSession берёт её готовой),
@@ -119,5 +124,9 @@ int main()
                          [db](HttpRequestPtr req) { return oidcPendingHandler(db, req); }, {Get})
         .registerHandler("/api/v1/auth/oidc/complete",
                          [db](HttpRequestPtr req) { return oidcCompleteHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/search/image", [db, ml](HttpRequestPtr req)
+                         { return mediaSearchHandler(db, ml, MediaKind::Image, req); }, {Post})
+        .registerHandler("/api/v1/search/video", [db, ml](HttpRequestPtr req)
+                         { return mediaSearchHandler(db, ml, MediaKind::Video, req); }, {Post})
         .run();
 }

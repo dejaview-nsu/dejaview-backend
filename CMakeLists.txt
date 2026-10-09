@@ -11,6 +11,15 @@ find_package(PostgreSQL CONFIG REQUIRED)
 find_package(libsodium CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 
+# libmagic системная (apt: libmagic-dev, в образе libmagic1t64 с базой правил), не из Conan:
+# база правил - файл системы, и на всех стадиях Docker одна Ubuntu. pkg-config в образах нет
+find_path(MAGIC_INCLUDE_DIR magic.h REQUIRED)
+find_library(MAGIC_LIBRARY magic REQUIRED)
+add_library(libmagic UNKNOWN IMPORTED)
+set_target_properties(libmagic PROPERTIES
+    IMPORTED_LOCATION ${MAGIC_LIBRARY}
+    INTERFACE_INCLUDE_DIRECTORIES ${MAGIC_INCLUDE_DIR})
+
 # HTML-шаблоны писем встраиваются в программу: CMake вставляет содержимое файла в строковый
 # литерал R"html(...)html" (src/email/templates.cpp.in). CMAKE_CONFIGURE_DEPENDS - правка
 # шаблона сама перезапускает cmake при следующей сборке
@@ -39,10 +48,18 @@ add_library(dejaview-core STATIC
     src/auth/registration.cpp
     src/auth/security_log.cpp
     src/auth/session.cpp
-    src/auth/validation.cpp)
+    src/auth/validation.cpp
+    src/search/circuit_breaker.cpp
+    src/search/errors.cpp
+    src/search/magic_mime.cpp
+    src/search/ml_client.cpp
+    src/search/ml_reply.cpp
+    src/search/rules.cpp
+    src/search/search.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
-target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl)
+target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl
+                      libmagic)
 
 add_executable(dejaview-backend src/main.cpp)
 target_link_libraries(dejaview-backend PRIVATE dejaview-core)
@@ -58,17 +75,24 @@ add_executable(dejaview-tests
     tests/auth/session_test.cpp
     tests/auth/validation_test.cpp
     tests/email/message_test.cpp
+    tests/search/circuit_breaker_test.cpp
+    tests/search/errors_test.cpp
+    tests/search/ml_reply_test.cpp
+    tests/search/rules_test.cpp
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
     tests/integration/db_test.cpp
     tests/integration/background_test.cpp
     tests/integration/guest_test.cpp
     tests/integration/login_test.cpp
+    tests/integration/ml_client_test.cpp
     tests/integration/oidc_test.cpp
-    tests/integration/registration_test.cpp)
+    tests/integration/registration_test.cpp
+    tests/integration/search_test.cpp)
 target_include_directories(dejaview-tests PRIVATE tests)
 # миграции интеграционные тесты применяют сами - через libpq, как dbmate
 target_compile_definitions(dejaview-tests PRIVATE
-    DEJAVIEW_MIGRATIONS_DIR="${CMAKE_SOURCE_DIR}/db/migrations")
+    DEJAVIEW_MIGRATIONS_DIR="${CMAKE_SOURCE_DIR}/db/migrations"
+    DEJAVIEW_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
 target_link_libraries(dejaview-tests PRIVATE dejaview-core PostgreSQL::PostgreSQL GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(dejaview-tests)
@@ -84,8 +108,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # gcovr читает счётчики Clang через llvm-cov той же версии, что и компилятор
     string(REGEX MATCH "^[0-9]+" CLANG_MAJOR ${CMAKE_CXX_COMPILER_VERSION})
     set(GCOV "llvm-cov-${CLANG_MAJOR} gcov")
-    # Пороги - #17098: весь src/ - 70% (п. 1.1), авторизация src/auth/ - 80% (п. 1.2). Ниже -
-    # команда завершается ошибкой. Интеграционные тесты нужны для обоих: задать TEST_DATABASE_URL.
+    # Пороги - #17098: весь src/ - 70% (п. 1.1), авторизация src/auth/ и поиск src/search/ - 80%
+    # (п. 1.2). Ниже - команда завершается ошибкой. Интеграционные тесты нужны для всех:
+    # задать TEST_DATABASE_URL.
     add_custom_target(coverage
         # счётчики копятся между запусками (и от ручного запуска сервера) - обнуляем
         COMMAND find . -name "*.gcda" -delete
@@ -95,6 +120,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
                 --gcov-executable ${GCOV} --txt --html-details coverage/index.html
                 --fail-under-line 70 .
         COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/auth/
+                --gcov-executable ${GCOV} --txt-summary --fail-under-line 80 .
+        COMMAND gcovr --root ${CMAKE_SOURCE_DIR} --filter ${CMAKE_SOURCE_DIR}/src/search/
                 --gcov-executable ${GCOV} --txt-summary --fail-under-line 80 .
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         DEPENDS dejaview-tests
