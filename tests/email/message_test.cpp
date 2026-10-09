@@ -58,6 +58,20 @@ TEST(RenderEmailTest, PasswordResetHasLinkAndExpiry)
     EXPECT_EQ(email.html.find("{{"), std::string::npos) << "осталась неподставленная переменная";
 }
 
+TEST(RenderEmailTest, PasswordChangedWarnsAndLinksToRecovery)
+{
+    const Email email = *renderEmail("password_changed", "ivan@example.com", "movie_fan_42",
+                                     "https://dejaview.ru/forgot-password");
+    // текст из #17150 п. 2.5
+    EXPECT_NE(email.body.find("Пароль вашей учётной записи DejaView был изменён. Если это были не "
+                              "вы, немедленно восстановите пароль"),
+              std::string::npos)
+        << email.body;
+    EXPECT_NE(email.body.find("https://dejaview.ru/forgot-password"), std::string::npos);
+    EXPECT_NE(email.html.find("href=\"https://dejaview.ru/forgot-password\""), std::string::npos);
+    EXPECT_EQ(email.html.find("{{"), std::string::npos) << "осталась неподставленная переменная";
+}
+
 TEST(RenderEmailTest, UnknownKindHasNoTemplate)
 {
     EXPECT_EQ(renderEmail("newsletter", "a@b.co", "x", "y"), std::nullopt);

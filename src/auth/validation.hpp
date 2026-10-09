@@ -10,7 +10,7 @@ struct FieldError
 {
     std::string code;     // AUTH_VALIDATION_ERROR, для года рождения - AUTH_BIRTH_YEAR_INVALID
     std::string message;  // текст для пользователя, дословно из контракта
-    std::string field;    // username, email, birth_year, password, login
+    std::string field;    // username, email, birth_year, password, login, new_password
 };
 
 // Серверные проверки полей (#17148 п. 2.3-2.4, #17149 п. 2.3). Правила и тексты - в схемах
@@ -36,6 +36,9 @@ std::optional<FieldError> validateBirthYear(int birthYear, int currentYear);
 // 8-128 символов, хотя бы одна заглавная и одна строчная латинская буква, цифра и специальный
 // символ - любой, кроме латинской буквы и цифры (в том числе кириллица).
 std::optional<FieldError> validatePassword(std::string_view password);
+
+// Новый пароль в формах #17150: правила те же, поле new_password, пустой - «Введите новый пароль».
+std::optional<FieldError> validateNewPassword(std::string_view password);
 
 // Имя пользователя или email для входа: строка с `@` проверяется как email, без `@` - как имя.
 std::optional<FieldError> validateLogin(std::string_view login);

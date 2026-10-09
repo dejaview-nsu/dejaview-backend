@@ -58,8 +58,8 @@ Gmail - так же: `smtps://smtp.gmail.com:465`, пароль приложен
 
 ## HTML-шаблон
 
-Шаблоны - `src/email/templates/<вид>.html`: `email_confirm.html`, `password_reset.html`. Их можно
-открыть в браузере. Подстановки `{{username}}` и `{{link}}`, значения экранируются для HTML. CMake
+Шаблоны - `src/email/templates/<вид>.html`: `email_confirm.html`, `password_reset.html`,
+`password_changed.html`. Их можно открыть в браузере. Подстановки `{{username}}` и `{{link}}`, значения экранируются для HTML. CMake
 встраивает файлы в программу при сборке: после правки достаточно `cmake --build build`.
 
 Правила вёрстки писем - в комментарии в начале `email_confirm.html`: таблицы вместо flex и grid,

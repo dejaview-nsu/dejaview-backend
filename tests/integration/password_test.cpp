@@ -1,4 +1,6 @@
 #include "auth/password.hpp"
+#include "auth/login.hpp"
+#include "auth/session.hpp"
 #include "integration/db_test.hpp"
 
 using namespace drogon;
@@ -25,6 +27,30 @@ class PasswordTest : public DbTest
         json["token"] = token;
         return run(checkPasswordResetHandler(
             db, request(Post, "/api/v1/auth/password-reset/check", json)));
+    }
+
+    HttpResponsePtr complete(const std::string &token, const std::string &newPassword)
+    {
+        Json::Value json;
+        json["token"] = token;
+        json["new_password"] = newPassword;
+        return run(completePasswordResetHandler(
+            db, kAppUrl, request(Post, "/api/v1/auth/password-reset/complete", json)));
+    }
+
+    HttpResponsePtr login(const std::string &login, const std::string &password)
+    {
+        Json::Value json;
+        json["login"] = login;
+        json["password"] = password;
+        return run(loginHandler(db, {}, request(Post, "/api/v1/auth/login", json)));
+    }
+
+    HttpStatusCode sessionStatus(const std::string &token)
+    {
+        return run(getSessionHandler(db, request(Get, "/api/v1/auth/session", Json::Value(),
+                                                 {{"dv_session", token}})))
+            ->statusCode();
     }
 };
 
@@ -112,4 +138,83 @@ TEST_F(PasswordTest, CheckRejectsExpiredBlockedAndForeignLinks)
         std::to_string(ivanId) + ", 'email_confirm', now() + interval '1 hour')");
     EXPECT_EQ(check("confirm-token")->statusCode(), k410Gone);
     EXPECT_EQ(check("")->statusCode(), k410Gone);
+}
+
+// Путь из #17976: запрос сброса, письмо, новый пароль, вход. Старый пароль и прежние сессии
+// больше не действуют
+TEST_F(PasswordTest, ResetRequestEmailNewPasswordLogin)
+{
+    createUser("ivan", "ivan@example.com");
+    const std::string oldSession = login("ivan", kPassword)->getCookie("dv_session").value();
+
+    requestReset("ivan@example.com");
+    const std::string token = lastLinkToken();  // из ссылки в письме
+    const auto response = complete(token, "Nova#2027");
+    EXPECT_EQ(response->statusCode(), k200OK);
+    EXPECT_EQ(body(response)["user"]["username"].asString(), "ivan");
+    const std::string newSession = response->getCookie("dv_session").value();
+
+    EXPECT_EQ(sessionStatus(oldSession), k401Unauthorized);
+    EXPECT_EQ(sessionStatus(newSession), k200OK);  // вошёл сразу после сброса
+    EXPECT_EQ(login("ivan", kPassword)->statusCode(), k400BadRequest);
+    EXPECT_EQ(login("ivan", "Nova#2027")->statusCode(), k200OK);
+
+    EXPECT_EQ(complete(token, "Other#2028")->statusCode(), k410Gone);  // ссылка одноразовая
+    EXPECT_EQ(scalar("SELECT payload->>'link' FROM email_outbox WHERE kind = 'password_changed'"),
+              "https://dejaview.ru/forgot-password");
+    EXPECT_EQ(scalar("SELECT string_agg(event_type, ',' ORDER BY event_id) FROM security_events "
+                     "WHERE details->>'method' = 'password_reset'"),
+              "password_change,login_success");
+}
+
+TEST_F(PasswordTest, RejectedNewPasswordKeepsLink)
+{
+    createUser("ivan", "ivan@example.com");
+    requestReset("ivan");
+    const std::string token = lastLinkToken();
+
+    const auto same = complete(token, kPassword);
+    EXPECT_EQ(same->statusCode(), k400BadRequest);
+    EXPECT_EQ(body(same)["code"].asString(), "AUTH_PASSWORD_SAME_AS_CURRENT");
+    EXPECT_EQ(body(same)["field"].asString(), "new_password");
+    const auto weak = complete(token, "");
+    EXPECT_EQ(body(weak)["message"].asString(), "Введите новый пароль");
+
+    EXPECT_EQ(complete(token, "Nova#2027")->statusCode(), k200OK);
+}
+
+TEST_F(PasswordTest, ResetConfirmsEmailAndClearsLoginLock)
+{
+    createUser("ivan", "ivan@example.com", "unconfirmed");
+    db->execSqlSync(
+        "UPDATE users SET failed_login_count = 5, locked_until = now() + interval '15 minutes'");
+    requestReset("ivan");
+    EXPECT_EQ(complete(lastLinkToken(), "Nova#2027")->statusCode(), k200OK);
+
+    EXPECT_EQ(scalar("SELECT status || ' ' || failed_login_count || ' ' || (locked_until IS NULL) "
+                     "FROM users"),
+              "active 0 true");
+    EXPECT_EQ(login("ivan", "Nova#2027")->statusCode(), k200OK);
+}
+
+TEST_F(PasswordTest, ResetGivesOidcAccountItsFirstPassword)
+{
+    db->execSqlSync(
+        "INSERT INTO users (username, email, birth_year, status) "
+        "VALUES ('ivan', 'ivan@example.com', 2000, 'active')");
+    requestReset("ivan");
+    EXPECT_EQ(complete(lastLinkToken(), "Nova#2027")->statusCode(), k200OK);
+    EXPECT_EQ(login("ivan", "Nova#2027")->statusCode(), k200OK);
+}
+
+TEST_F(PasswordTest, BlockedAccountCannotCompleteReset)
+{
+    createUser("ivan", "ivan@example.com");
+    requestReset("ivan");
+    db->execSqlSync("UPDATE users SET status = 'blocked'");
+
+    const auto response = complete(lastLinkToken(), "Nova#2027");
+    EXPECT_EQ(response->statusCode(), k410Gone);
+    EXPECT_EQ(body(response)["code"].asString(), "AUTH_RESET_LINK_EXPIRED");
+    EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox WHERE kind = 'password_changed'"), "0");
 }

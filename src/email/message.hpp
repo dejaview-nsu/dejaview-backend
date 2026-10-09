@@ -16,7 +16,7 @@ struct Email
 };
 
 // Письмо по виду из email_outbox.kind: email_confirm (#17148 п. 2.5), password_reset (#17150
-// п. 1.2). Другой вид - nullopt.
+// п. 1.2), password_changed (#17150 п. 2.5, 3.3). Другой вид - nullopt.
 std::optional<Email> renderEmail(std::string_view kind, std::string_view to,
                                  std::string_view username, std::string_view link);
 

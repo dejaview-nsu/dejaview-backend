@@ -132,6 +132,21 @@ std::optional<Email> renderEmail(std::string_view kind, std::string_view to,
                      .html = fillTemplate(fillTemplate(kPasswordResetHtml, "username", username),
                                           "link", link)};
     }
+    if (kind == "password_changed")
+    {
+        return Email{.to = std::string(to),
+                     .subject = "Пароль в DejaView изменён",
+                     .body = std::format("Здравствуйте, {}!\n"
+                                         "\n"
+                                         "Пароль вашей учётной записи DejaView был изменён. Если "
+                                         "это были не вы, немедленно восстановите пароль:\n"
+                                         "{}\n"
+                                         "\n"
+                                         "Если пароль меняли вы, ничего делать не нужно.\n",
+                                         username, link),
+                     .html = fillTemplate(fillTemplate(kPasswordChangedHtml, "username", username),
+                                          "link", link)};
+    }
     return std::nullopt;
 }
 

@@ -87,15 +87,15 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 | `POST /auth/login` | `src/auth/login.cpp`, правила подбора - `login_rules.cpp`, CAPTCHA - `captcha.cpp` |
 | `GET /auth/session`, `POST /auth/logout` | `src/auth/session.cpp` |
 | `GET /auth/oidc/{provider}/start`, `/callback`, `GET /auth/oidc/pending`, `POST /auth/oidc/complete` | `src/auth/oidc.cpp`, разбор профилей - `oidc_profile.cpp` |
-| `POST /auth/password-reset/request`, `/auth/password-reset/check` | `src/auth/password.cpp` |
+| `POST /auth/password-reset/request`, `/check`, `/complete` | `src/auth/password.cpp`, правила - `password_rules.cpp` |
 
 Общее: `validation.cpp` - правила полей, `crypto.cpp` - Argon2id, токены, SHA-256, PKCE,
 `security_log.cpp` - журнал безопасности, `http_common.cpp` - разбор тела и типовые ответы.
 Письма - `src/email/`: шаблоны `templates/*.html`, формат письма, отправка из `email_outbox`.
 `src/background.cpp` - фоновый поток: письма раз в 5 с, очистка устаревшего раз в час.
 
-Чистая логика (валидация, правила подбора, формат писем, разбор профилей) - без БД и сети,
-покрыта модульными тестами в `tests/auth/` и `tests/email/`.
+Чистая логика (валидация, правила подбора и смены пароля, формат писем, разбор профилей) - без БД
+и сети, покрыта модульными тестами в `tests/auth/` и `tests/email/`.
 
 ## Решения, которые стоит знать при ревью
 
@@ -126,6 +126,11 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
   не чаще раза в 60 с на учётную запись, как у повторной отправки подтверждения: иначе запросами
   можно завалить чужой ящик. Ранний повтор ничего не меняет, прежняя ссылка действует.
   Заблокированной учётной записи письмо не уходит, а её ссылка, отправленная до блокировки, - 410.
+- **Новый пароль по ссылке: сначала проверки, потом одно изменение.** Сначала ссылка (410), затем
+  правила и совпадение с текущим (400): ошибка пароля ссылку не расходует. Потом одним запросом
+  ссылка удаляется, пароль меняется, все сессии пользователя удаляются, письмо «Пароль изменён»
+  встаёт в очередь. Ссылку, израсходованную параллельным запросом, он не найдёт - 410. Сброс
+  подтверждает email и, как успешный вход, обнуляет счётчик подбора.
 - **Очистка** раз в час: истёкшие сессии и `oidc_pending`, ссылки из писем через 7 дней после
   истечения (по ним работает «Отправить новую ссылку»), журнал старше 30 дней (#17094 п. 5.2),
   неотправленные письма старше суток.

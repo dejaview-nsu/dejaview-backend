@@ -127,5 +127,8 @@ int main()
                          { return requestPasswordResetHandler(db, appUrl, req); }, {Post})
         .registerHandler("/api/v1/auth/password-reset/check", [db](HttpRequestPtr req)
                          { return checkPasswordResetHandler(db, req); }, {Post})
+        .registerHandler("/api/v1/auth/password-reset/complete",
+                         [db, appUrl = config.appUrl](HttpRequestPtr req)
+                         { return completePasswordResetHandler(db, appUrl, req); }, {Post})
         .run();
 }

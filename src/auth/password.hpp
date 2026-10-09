@@ -20,3 +20,9 @@ drogon::Task<drogon::HttpResponsePtr> requestPasswordResetHandler(drogon::orm::D
 // использована. Ссылка не расходуется.
 drogon::Task<drogon::HttpResponsePtr> checkPasswordResetHandler(drogon::orm::DbClientPtr db,
                                                                 drogon::HttpRequestPtr req);
+
+// POST /auth/password-reset/complete (#17150 п. 2): новый пароль по ссылке. Успех - все сессии
+// пользователя завершены, создана новая (SessionCreated), в очереди письмо о смене пароля.
+drogon::Task<drogon::HttpResponsePtr> completePasswordResetHandler(drogon::orm::DbClientPtr db,
+                                                                   std::string appUrl,
+                                                                   drogon::HttpRequestPtr req);

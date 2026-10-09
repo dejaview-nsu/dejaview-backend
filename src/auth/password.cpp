@@ -2,10 +2,16 @@
 
 #include "auth/crypto.hpp"
 #include "auth/http_common.hpp"
+#include "auth/password_rules.hpp"
+#include "auth/security_log.hpp"
+#include "auth/session.hpp"
 #include "auth/validation.hpp"
 #include "error_response.hpp"
 
 #include <drogon/drogon.h>
+
+#include <cstdint>
+#include <optional>
 
 using namespace drogon;
 
@@ -24,6 +30,14 @@ std::string resetPayload(const std::string &appUrl, const std::string &token)
 {
     Json::Value payload;
     payload["link"] = appUrl + "/reset-password?token=" + token;
+    return payload.toStyledString();
+}
+
+// payload письма о смене пароля: кнопка «Восстановить пароль» ведёт на форму запроса
+std::string passwordChangedPayload(const std::string &appUrl)
+{
+    Json::Value payload;
+    payload["link"] = appUrl + "/forgot-password";
     return payload.toStyledString();
 }
 }  // namespace
@@ -79,4 +93,61 @@ Task<HttpResponsePtr> checkPasswordResetHandler(orm::DbClientPtr db, HttpRequest
         co_return resetLinkExpired();
     }
     co_return HttpResponse::newHttpResponse(k204NoContent, CT_NONE);
+}
+
+Task<HttpResponsePtr> completePasswordResetHandler(orm::DbClientPtr db, std::string appUrl,
+                                                   HttpRequestPtr req)
+{
+    const Json::Value *json = jsonBody(req);
+    if (!json)
+    {
+        co_return malformedBody();
+    }
+    const std::string hash = tokenHash(stringField(*json, "token"));
+    const std::string newPassword = stringField(*json, "new_password");
+
+    // Сначала ссылка: если она истекла, исправлять пароль бессмысленно
+    const auto found = co_await db->execSqlCoro(
+        "SELECT user_id, password_hash FROM auth_tokens JOIN users USING (user_id) "
+        "WHERE token_hash = decode($1, 'hex') AND purpose = 'password_reset' "
+        "AND expires_at > now() AND status <> 'blocked'",
+        hash);
+    if (found.empty())
+    {
+        co_return resetLinkExpired();
+    }
+    const auto &user = found[0];
+    const auto currentHash = user["password_hash"].isNull()
+                                 ? std::nullopt
+                                 : std::optional(user["password_hash"].as<std::string>());
+    // Ошибка пароля ссылку не расходует: его можно исправить и отправить снова
+    if (const auto error = checkResetPassword(newPassword, currentHash))
+    {
+        co_return fieldErrorResponse(*error);
+    }
+
+    // Ссылка гасится, пароль меняется, все сессии завершаются, письмо в очередь - одним запросом.
+    // Сброс подтверждает email (допущение контракта) и, как успешный вход, обнуляет счётчик подбора
+    const auto changed = co_await db->execSqlCoro(
+        "WITH t AS (DELETE FROM auth_tokens WHERE token_hash = decode($1, 'hex') "
+        "AND purpose = 'password_reset' AND expires_at > now() RETURNING user_id), "
+        "u AS (UPDATE users SET password_hash = $2, status = 'active', failed_login_count = 0, "
+        "locked_until = NULL FROM t WHERE users.user_id = t.user_id AND users.status <> 'blocked' "
+        "RETURNING users.user_id), "
+        "s AS (DELETE FROM sessions WHERE user_id IN (SELECT user_id FROM u)), "
+        "o AS (INSERT INTO email_outbox (user_id, kind, payload) "
+        "SELECT user_id, 'password_changed', $3::jsonb FROM u) "
+        "SELECT user_id FROM u",
+        hash, hashPassword(newPassword), passwordChangedPayload(appUrl));
+    if (changed.empty())
+    {
+        co_return resetLinkExpired();  // ссылку израсходовал параллельный запрос
+    }
+
+    const auto userId = changed[0]["user_id"].as<std::int64_t>();
+    Json::Value details;
+    details["method"] = "password_reset";
+    co_await logSecurityEvent(db, "password_change", userId, req, details);
+    co_await logSecurityEvent(db, "login_success", userId, req, details);
+    co_return co_await startSession(db, req, userId);
 }

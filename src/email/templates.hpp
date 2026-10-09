@@ -6,3 +6,4 @@
 // сборке (templates.cpp.in): их не нужно копировать в Docker-образ и искать на диске.
 extern const std::string_view kEmailConfirmHtml;
 extern const std::string_view kPasswordResetHtml;
+extern const std::string_view kPasswordChangedHtml;

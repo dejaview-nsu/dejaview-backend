@@ -8,13 +8,12 @@ class BackgroundTest : public DbTest
     // SMTP-сервера на этом порту нет: каждая отправка - сбой соединения
     SmtpConfig deadSmtp{.url = "smtp://127.0.0.1:1", .from = "noreply@dejaview.ru"};
 
-    void queueEmail(const std::string &kind = "email_confirm")
+    void queueEmail()
     {
         db->execSqlSync(
             "INSERT INTO email_outbox (user_id, kind, payload) "
-            "SELECT user_id, $1, '{\"link\": \"https://x/confirm-email?token=t\"}' "
-            "FROM users LIMIT 1",
-            kind);
+            "SELECT user_id, 'email_confirm', '{\"link\": \"https://x/confirm-email?token=t\"}' "
+            "FROM users LIMIT 1");
     }
 };
 
@@ -33,17 +32,14 @@ TEST_F(BackgroundTest, FailedSendIsRetriedLater)
     EXPECT_EQ(scalar("SELECT attempts FROM email_outbox"), "1");
 }
 
-TEST_F(BackgroundTest, GivesUpAfterLastAttemptOrWithoutTemplate)
+TEST_F(BackgroundTest, GivesUpAfterLastAttempt)
 {
     createUser("ivan", "ivan@example.com");
     queueEmail();
     db->execSqlSync("UPDATE email_outbox SET attempts = 7");  // осталась последняя попытка
-    queueEmail("password_changed");                           // шаблона пока нет (#17150)
     sendPendingEmails(db, deadSmtp);
 
-    EXPECT_EQ(
-        scalar("SELECT string_agg(kind || ' ' || status, ', ' ORDER BY kind) FROM email_outbox"),
-        "email_confirm failed, password_changed failed");
+    EXPECT_EQ(scalar("SELECT status || ' ' || attempts FROM email_outbox"), "failed 8");
 }
 
 TEST_F(BackgroundTest, DeleteExpiredKeepsFreshRows)

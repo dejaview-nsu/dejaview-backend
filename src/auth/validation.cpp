@@ -14,6 +14,7 @@ constexpr std::string_view kUsernameField = "username";
 constexpr std::string_view kEmailField = "email";
 constexpr std::string_view kBirthYearField = "birth_year";
 constexpr std::string_view kPasswordField = "password";
+constexpr std::string_view kNewPasswordField = "new_password";
 constexpr std::string_view kLoginField = "login";
 
 FieldError makeError(std::string_view code, std::string_view message, std::string_view field)
@@ -172,6 +173,20 @@ std::optional<FieldError> validatePassword(std::string_view password)
             kPasswordField);
     }
     return std::nullopt;
+}
+
+std::optional<FieldError> validateNewPassword(std::string_view password)
+{
+    if (password.empty())
+    {
+        return validationError("Введите новый пароль", kNewPasswordField);
+    }
+    auto error = validatePassword(password);
+    if (error)
+    {
+        error->field = kNewPasswordField;
+    }
+    return error;
 }
 
 std::optional<FieldError> validateLogin(std::string_view login)
