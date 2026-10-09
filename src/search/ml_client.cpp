@@ -4,7 +4,10 @@
 
 #include <drogon/drogon.h>
 
+#include <sys/socket.h>
+
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 
 using namespace drogon;
@@ -16,6 +19,8 @@ using Clock = CircuitBreaker::Clock;
 using SearchResult = std::expected<std::vector<std::int64_t>, SearchError>;
 
 constexpr std::chrono::seconds kHealthTimeout{1};
+// установка соединения - не дольше 1 с, внутри общего срока
+constexpr std::chrono::seconds kConnectTimeout{1};
 constexpr std::size_t kLoggedBodyBytes = 512;
 
 // Тайм-аут Drogon 0 означает "без тайм-аута", поэтому остаток передаётся дробными секундами
@@ -62,6 +67,64 @@ class ProbeGuard
     bool reported_ = false;
 };
 
+// Drogon при тайм-ауте только вызывает callback, а отправленный запрос и соединение держит, пока
+// ML не ответит (HttpClientImpl.cc, sendRequestInLoop), поэтому сокет закрываем сами. Он же
+// ограничивает установку соединения. Сокет запоминается в sockopt-callback, таймер и shutdown
+// работают в потоке цикла клиента; корутина после co_await возобновляется из callback Drogon
+// в том же потоке (HttpRespAwaiter::await_suspend), т.е. пока соединение живо и fd не мог быть
+// закрыт и выдан заново. Деструктор вызывается там же и гасит таймер.
+class ConnectionWatch
+{
+  public:
+    ConnectionWatch(HttpClient &client, double timeoutSeconds) : state_(std::make_shared<State>())
+    {
+        client.setSockOptCallback([state = state_](int fd) { state->fd = fd; });
+        client.getLoop()->runAfter(std::min(seconds(kConnectTimeout), timeoutSeconds),
+                                   [state = state_] { state->abortIfNotConnected(); });
+    }
+    ~ConnectionWatch() { state_->finished = true; }
+    ConnectionWatch(const ConnectionWatch &) = delete;
+    ConnectionWatch &operator=(const ConnectionWatch &) = delete;
+
+    void abortOnTimeout(const std::exception &error) const
+    {
+        const auto *http = dynamic_cast<const HttpException *>(&error);
+        if (http != nullptr && http->code() == ReqResult::Timeout)
+        {
+            state_->abort();
+        }
+    }
+
+  private:
+    struct State
+    {
+        int fd = -1;
+        bool finished = false;
+
+        void abort() const
+        {
+            if (fd >= 0)
+            {
+                ::shutdown(fd, SHUT_RDWR);
+            }
+        }
+
+        void abortIfNotConnected() const
+        {
+            sockaddr_storage peer{};
+            socklen_t length = sizeof(peer);
+            if (!finished && fd >= 0 &&
+                ::getpeername(fd, reinterpret_cast<sockaddr *>(&peer), &length) != 0 &&
+                errno == ENOTCONN)
+            {
+                abort();
+            }
+        }
+    };
+
+    std::shared_ptr<State> state_;
+};
+
 HttpRequestPtr newRequest(HttpMethod method, const std::string &path, const std::string &requestId)
 {
     auto request = HttpRequest::newHttpRequest();
@@ -79,6 +142,7 @@ std::string searchPath(MediaKind kind)
 Task<bool> isHealthy(std::string url, std::string requestId, double timeoutSeconds)
 {
     auto client = HttpClient::newHttpClient(url);
+    const ConnectionWatch watch(*client, timeoutSeconds);
     try
     {
         const auto response =
@@ -87,6 +151,7 @@ Task<bool> isHealthy(std::string url, std::string requestId, double timeoutSecon
     }
     catch (const std::exception &e)
     {
+        watch.abortOnTimeout(e);
         LOG_WARN << "ML /health недоступен [X-Request-Id " << requestId << "]: " << e.what();
         co_return false;
     }
@@ -101,6 +166,7 @@ Task<SearchResult> postSearch(std::shared_ptr<MlService> ml, MediaKind kind, std
     auto request = newRequest(Post, searchPath(kind), requestId);
     request->setContentTypeString(mime);
     request->setBody(std::move(content));
+    const ConnectionWatch watch(*client, timeoutSeconds);
     try
     {
         const auto response = co_await client->sendRequestCoro(request, timeoutSeconds);
@@ -125,6 +191,7 @@ Task<SearchResult> postSearch(std::shared_ptr<MlService> ml, MediaKind kind, std
     }
     catch (const std::exception &e)
     {
+        watch.abortOnTimeout(e);
         LOG_WARN << "ML недоступен [X-Request-Id " << requestId << "]: " << e.what();
         ml->breaker.onOutage(Clock::now());
         co_return std::unexpected(SearchError::Unavailable);

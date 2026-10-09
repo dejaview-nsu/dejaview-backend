@@ -1,4 +1,5 @@
-# Пересоздаёт образцы для tests/search/rules_test.cpp (формат определяется по содержимому).
+# Пересоздаёт образцы для tests/search/rules_test.cpp и tests/integration/search_test.cpp
+# (через tests/search/samples.hpp); формат определяется по содержимому.
 # Запуск из корня репозитория, нужен Docker:
 #   docker run --rm -v "$PWD/tests/data/search:/out" -v "$PWD/tests/data/search/gen.sh:/gen.sh:ro" \
 #       debian:bookworm sh /gen.sh

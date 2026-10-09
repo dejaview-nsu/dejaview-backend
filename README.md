@@ -63,7 +63,7 @@ docker compose up --build
 | `SMTP_USER`, `SMTP_PASSWORD` | нет | - | учётные данные SMTP; не заданы - без авторизации |
 | `ML_URL` | нет | `http://ml:8000` | адрес ML-сервиса поиска по изображению и видео |
 | `ML_MAX_CONCURRENT` | нет | `4` | сколько обращений к ML одновременно на экземпляр (>= 1); сверх лимита - 503 SERVER_BUSY |
-| `ML_IMAGE_TIMEOUT_MS`, `ML_VIDEO_TIMEOUT_MS` | нет | `9000`, `14000` | общий срок вызова ML для изображения и видео, включая соединение и проверку `/health` (backend-ml.md, разд. 4) |
+| `ML_IMAGE_TIMEOUT_MS`, `ML_VIDEO_TIMEOUT_MS` | нет | `9000`, `14000` | общий срок вызова ML для изображения и видео, включая проверку `/health`; соединение - не дольше 1 с |
 | `ML_FAILURES_TO_OPEN`, `ML_OPEN_FOR_MS` | нет | `5`, `30000` | сколько сбоев ML подряд отключают вызовы и на сколько (backend-ml.md, разд. 5) |
 | `API_URL` | нет | `APP_URL` | публичный адрес backend для redirect_uri OIDC: `{API_URL}/api/v1/auth/oidc/<провайдер>/callback` |
 | `OIDC_YANDEX_CLIENT_ID`, `OIDC_YANDEX_CLIENT_SECRET` | нет | - | приложение на oauth.yandex.ru; не заданы - вход через Яндекс выключен |
