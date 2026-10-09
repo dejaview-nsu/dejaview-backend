@@ -167,3 +167,19 @@ Task<HttpResponsePtr> getSessionHandler(orm::DbClientPtr db, HttpRequestPtr req)
     const auto user = co_await checkSession(db, req);
     co_return user ? HttpResponse::newHttpJsonResponse(sessionInfo(*user)) : user.error();
 }
+
+Task<HttpResponsePtr> logoutHandler(orm::DbClientPtr db, HttpRequestPtr req)
+{
+    const auto user = co_await requireSession(db, req);
+    if (!user)
+    {
+        co_return user.error();
+    }
+    co_await db->execSqlCoro("DELETE FROM sessions WHERE token_hash = decode($1, 'hex')",
+                             tokenHash(req->getCookie("dv_session")));
+    co_await logSecurityEvent(db, "logout", user->userId, req, Json::Value(Json::objectValue));
+
+    auto response = HttpResponse::newHttpResponse(k204NoContent, CT_NONE);
+    response->addCookie(clearSessionCookie());
+    co_return response;
+}

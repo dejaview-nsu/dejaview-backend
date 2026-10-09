@@ -209,6 +209,37 @@ TEST_F(LoginTest, RequireSessionRejectsAndLogsAccessDenied)
               "2 /api/v1/search/text");
 }
 
+TEST_F(LoginTest, LogoutEndsOnlyCurrentSession)
+{
+    const auto userId = createUser("ivan", "ivan@example.com");
+    // вход с двух устройств - две сессии
+    const std::string phone = login("ivan", kPassword)->getCookie("dv_session").value();
+    const std::string laptop = login("ivan", kPassword)->getCookie("dv_session").value();
+    const auto logout = [&](const std::string &token)
+    {
+        return run(logoutHandler(
+            db, request(Post, "/api/v1/auth/logout", Json::Value(), {{"dv_session", token}})));
+    };
+    const auto session = [&](const std::string &token)
+    {
+        return run(getSessionHandler(
+            db, request(Get, "/api/v1/auth/session", Json::Value(), {{"dv_session", token}})));
+    };
+
+    const auto response = logout(phone);
+    EXPECT_EQ(response->statusCode(), k204NoContent);
+    EXPECT_EQ(response->getCookie("dv_session").maxAge(), 0);  // cookie стёрта
+    EXPECT_EQ(session(phone)->statusCode(), k401Unauthorized);
+    EXPECT_EQ(session(laptop)->statusCode(), k200OK);  // другое устройство не затронуто
+    EXPECT_EQ(scalar("SELECT count(*) FROM sessions"), "1");
+    EXPECT_EQ(scalar("SELECT count(*) || ' ' || max(user_id) FROM security_events "
+                     "WHERE event_type = 'logout'"),
+              "1 " + std::to_string(userId));
+
+    // повторный выход с той же cookie - 401: клиент считает его успешным выходом
+    EXPECT_EQ(logout(phone)->statusCode(), k401Unauthorized);
+}
+
 TEST_F(LoginTest, ExpiredSessionIsRejected)
 {
     createUser("ivan", "ivan@example.com");

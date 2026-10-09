@@ -106,6 +106,8 @@ int main()
                          [db, captcha = CaptchaSettings{.serverKey = config.smartCaptchaServerKey}](
                              HttpRequestPtr req) { return loginHandler(db, captcha, req); },
                          {Post})
+        .registerHandler("/api/v1/auth/logout",
+                         [db](HttpRequestPtr req) { return logoutHandler(db, req); }, {Post})
         .registerHandler("/api/v1/auth/resend-confirmation",
                          [db, appUrl = config.appUrl](HttpRequestPtr req)
                          { return resendConfirmationHandler(db, appUrl, req); }, {Post})

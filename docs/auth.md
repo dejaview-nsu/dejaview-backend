@@ -1,9 +1,9 @@
 # Авторизация
 
 Регистрация с подтверждением email, вход по паролю с защитой от подбора и CAPTCHA, серверные
-сессии, вход через Яндекс, Google и VK ID, письма через очередь (#17826). Контракт - теги Auth и
-OIDC в `dejaview-docs/api/openapi.yaml`, таблицы - `dejaview-docs/contracts/db-schema.md`. Выход
-(#17151) и восстановление пароля (#17150) - в Sprint 2.
+сессии и выход, вход через Яндекс, Google и VK ID, письма через очередь (#17826, #17151).
+Контракт - теги Auth и OIDC в `dejaview-docs/api/openapi.yaml`, таблицы -
+`dejaview-docs/contracts/db-schema.md`. Восстановление и смена пароля (#17150) - в работе (#17976).
 
 ## Защита эндпоинта сессией
 
@@ -85,7 +85,7 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 |---|---|
 | `POST /auth/register`, `/auth/confirm-email`, `/auth/resend-confirmation` | `src/auth/registration.cpp` |
 | `POST /auth/login` | `src/auth/login.cpp`, правила подбора - `login_rules.cpp`, CAPTCHA - `captcha.cpp` |
-| `GET /auth/session` | `src/auth/session.cpp` |
+| `GET /auth/session`, `POST /auth/logout` | `src/auth/session.cpp` |
 | `GET /auth/oidc/{provider}/start`, `/callback`, `GET /auth/oidc/pending`, `POST /auth/oidc/complete` | `src/auth/oidc.cpp`, разбор профилей - `oidc_profile.cpp` |
 
 Общее: `validation.cpp` - правила полей, `crypto.cpp` - Argon2id, токены, SHA-256, PKCE,
@@ -100,6 +100,8 @@ Task<HttpResponsePtr> searchTextHandler(orm::DbClientPtr db, HttpRequestPtr req)
 
 - **Сессии серверные.** В cookie случайный токен 256 бит, в БД - его SHA-256: копия таблицы не
   даёт войти. Срок 24 ч без продления (#17094 п. 1.3). Новый вход удаляет сессию из cookie.
+  Выход удаляет только её: на других устройствах пользователь остаётся (#17151). Нет строки -
+  нет сессии: выход действует сразу, в отличие от JWT, который до конца срока не отозвать.
 - **Атомарность одним запросом.** Регистрация (пользователь + ссылка + письмо), подтверждение и
   завершение OIDC - один SQL-запрос с `WITH`: он выполняется целиком или никак. Объекты
   транзакций Drogon не используются.
