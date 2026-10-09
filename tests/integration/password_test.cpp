@@ -275,6 +275,7 @@ TEST_F(PasswordTest, ChangeRequiresCurrentPassword)
     EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox"), "0");  // пароль не менялся
     EXPECT_EQ(changePassword("", passwords(kPassword, "Nova#2027"))->statusCode(),
               k401Unauthorized);
+    EXPECT_EQ(changePassword(session, Json::Value())->statusCode(), k400BadRequest);  // не JSON
 }
 
 TEST_F(PasswordTest, OidcAccountSetsPasswordWithoutCurrentOne)

@@ -9,7 +9,7 @@ src/
   error_response.*      тело ошибки Error из контракта
   health.*              GET /health
   background.*          фоновый поток: письма из очереди, очистка устаревшего
-  auth/                 регистрация, вход, сессии, OIDC - docs/auth.md
+  auth/                 регистрация, вход, сессии, пароль, OIDC - docs/auth.md
   email/                письма: шаблоны templates/*.html, формат, отправка из очереди
 tests/                  модульные тесты, раскладка как в src/
 db/migrations/          миграции dbmate
