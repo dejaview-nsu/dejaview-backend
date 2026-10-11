@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -23,7 +24,9 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("SMTP_PASSWORD");
         for (const char *name :
              {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
-              "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET", "OIDC_VK_CLIENT_ID"})
+              "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET", "OIDC_VK_CLIENT_ID", "ML_URL",
+              "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
+              "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
         {
             unsetenv(name);
         }
@@ -35,7 +38,9 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("POSTGRES_URL");
         unsetenv("APP_URL");
         unsetenv("SMARTCAPTCHA_SERVER_KEY");
-        for (const char *name : {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD"})
+        for (const char *name : {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD", "ML_URL",
+                                 "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
+                                 "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
         {
             unsetenv(name);
         }
@@ -61,7 +66,17 @@ TEST_F(LoadConfigTest, RejectsInvalidPort)
     {
         SCOPED_TRACE(port);  // при падении покажет, на каком значении
         setenv("PORT", port, 1);
-        EXPECT_THROW(loadConfig(), std::runtime_error);
+        try
+        {
+            loadConfig();
+            ADD_FAILURE() << "ожидалось исключение";
+        }
+        catch (const std::runtime_error &error)
+        {
+            EXPECT_NE(std::string(error.what()).find("'" + std::string(port) + "'"),
+                      std::string::npos)
+                << error.what();
+        }
     }
 }
 
@@ -177,4 +192,170 @@ TEST_F(LoadConfigTest, OidcProviderIsOptional)
     EXPECT_EQ(config.google.clientId, "");  // каждый провайдер включается отдельно
     unsetenv("OIDC_YANDEX_CLIENT_ID");
     unsetenv("OIDC_YANDEX_CLIENT_SECRET");
+}
+
+TEST_F(LoadConfigTest, UsesContractDefaultsForMl)
+{
+    const MlConfig ml = loadConfig().ml;
+    EXPECT_EQ(ml.url, "http://ml:8000");
+    EXPECT_EQ(ml.maxConcurrent, 4u);
+    EXPECT_EQ(ml.imageTimeout, std::chrono::milliseconds(9'000));
+    EXPECT_EQ(ml.videoTimeout, std::chrono::milliseconds(14'000));
+    EXPECT_EQ(ml.failuresToOpen, 5);
+    EXPECT_EQ(ml.openFor, std::chrono::milliseconds(30'000));
+}
+
+TEST_F(LoadConfigTest, StripsTrailingSlashFromMlUrl)
+{
+    setenv("ML_URL", "http://ml:9000/", 1);
+    EXPECT_EQ(loadConfig().ml.url, "http://ml:9000");
+}
+
+TEST_F(LoadConfigTest, RejectsMlUrlWithoutHttpScheme)
+{
+    setenv("ML_URL", "ml:8000", 1);
+    EXPECT_THROW(loadConfig(), std::runtime_error);
+}
+
+TEST_F(LoadConfigTest, ReadsMlMaxConcurrent)
+{
+    for (const auto &[text, expected] : {std::pair<const char *, std::size_t>{"1", 1},
+                                         std::pair<const char *, std::size_t>{"16", 16}})
+    {
+        SCOPED_TRACE(text);
+        setenv("ML_MAX_CONCURRENT", text, 1);
+        EXPECT_EQ(loadConfig().ml.maxConcurrent, expected);
+    }
+}
+
+TEST_F(LoadConfigTest, RejectsInvalidMlMaxConcurrent)
+{
+    for (const char *value : {"0", "", "abc", "-1", " 4", "4x"})
+    {
+        SCOPED_TRACE(value);
+        setenv("ML_MAX_CONCURRENT", value, 1);
+        try
+        {
+            loadConfig();
+            ADD_FAILURE() << "ожидалось исключение";
+        }
+        catch (const std::runtime_error &error)
+        {
+            EXPECT_NE(std::string(error.what()).find("ML_MAX_CONCURRENT"), std::string::npos);
+        }
+    }
+}
+
+TEST_F(LoadConfigTest, RejectsMlMaxConcurrentAboveIntRange)
+{
+    for (const char *value : {"2147483648", "4294967296", "99999999999999999999"})
+    {
+        SCOPED_TRACE(value);
+        setenv("ML_MAX_CONCURRENT", value, 1);
+        try
+        {
+            loadConfig();
+            ADD_FAILURE() << "ожидалось исключение";
+        }
+        catch (const std::runtime_error &error)
+        {
+            EXPECT_NE(std::string(error.what()).find("ML_MAX_CONCURRENT"), std::string::npos);
+        }
+    }
+}
+
+namespace
+{
+
+// Четыре новых настройки ML: одинаковые правила, различается переменная и поле
+constexpr const char *kMlNumberNames[] = {"ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
+                                          "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"};
+
+std::string loadConfigError()
+{
+    try
+    {
+        loadConfig();
+    }
+    catch (const std::runtime_error &error)
+    {
+        return error.what();
+    }
+    ADD_FAILURE() << "ожидалось исключение";
+    return {};
+}
+
+}  // namespace
+
+TEST_F(LoadConfigTest, ReadsMlImageTimeoutInMilliseconds)
+{
+    setenv("ML_IMAGE_TIMEOUT_MS", "2500", 1);
+    EXPECT_EQ(loadConfig().ml.imageTimeout, std::chrono::milliseconds(2'500));
+}
+
+TEST_F(LoadConfigTest, ReadsMlVideoTimeoutInMilliseconds)
+{
+    setenv("ML_VIDEO_TIMEOUT_MS", "7000", 1);
+    EXPECT_EQ(loadConfig().ml.videoTimeout, std::chrono::milliseconds(7'000));
+}
+
+TEST_F(LoadConfigTest, ReadsMlFailuresToOpenAsCount)
+{
+    setenv("ML_FAILURES_TO_OPEN", "3", 1);
+    EXPECT_EQ(loadConfig().ml.failuresToOpen, 3);
+}
+
+TEST_F(LoadConfigTest, ReadsMlOpenForInMilliseconds)
+{
+    setenv("ML_OPEN_FOR_MS", "1500", 1);
+    EXPECT_EQ(loadConfig().ml.openFor, std::chrono::milliseconds(1'500));
+}
+
+TEST_F(LoadConfigTest, MlNumbersAreIndependentOfEachOther)
+{
+    setenv("ML_IMAGE_TIMEOUT_MS", "1", 1);
+    const MlConfig ml = loadConfig().ml;
+    EXPECT_EQ(ml.imageTimeout, std::chrono::milliseconds(1));
+    EXPECT_EQ(ml.videoTimeout, std::chrono::milliseconds(14'000));
+    EXPECT_EQ(ml.failuresToOpen, 5);
+    EXPECT_EQ(ml.openFor, std::chrono::milliseconds(30'000));
+    EXPECT_EQ(ml.maxConcurrent, 4u);
+}
+
+TEST_F(LoadConfigTest, AcceptsMlNumbersAtBothBoundaries)
+{
+    for (const char *name : kMlNumberNames)
+    {
+        for (const char *value : {"1", "2147483647"})
+        {
+            SCOPED_TRACE(std::string(name) + "=" + value);
+            setenv(name, value, 1);
+            EXPECT_NO_THROW(loadConfig());
+        }
+        unsetenv(name);
+    }
+}
+
+TEST_F(LoadConfigTest, RejectsInvalidMlNumbersNamingVariableAndValue)
+{
+    for (const char *name : kMlNumberNames)
+    {
+        for (const char *value :
+             {"0", "-1", "abc", "12x", "", " 5", "2147483648", "99999999999999999999"})
+        {
+            SCOPED_TRACE(std::string(name) + "=" + value);
+            setenv(name, value, 1);
+            const std::string message = loadConfigError();
+            EXPECT_NE(message.find(name), std::string::npos) << message;
+            EXPECT_NE(message.find("'" + std::string(value) + "'"), std::string::npos) << message;
+        }
+        unsetenv(name);
+    }
+}
+
+TEST_F(LoadConfigTest, MlNumberErrorUsesTheSameFormatAsMaxConcurrent)
+{
+    setenv("ML_OPEN_FOR_MS", "0", 1);
+    EXPECT_EQ(loadConfigError(),
+              "ML_OPEN_FOR_MS: ожидается целое число от 1 до 2147483647, получено '0'");
 }

@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <format>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
@@ -87,6 +88,41 @@ SmtpConfig readSmtp()
         .password = std::string(env("SMTP_PASSWORD").value_or("")),
     };
 }
+
+// Целое от 1 до INT_MAX из переменной окружения; не задана - fallback
+int readPositiveInt(const char *name, int fallback)
+{
+    const auto value = env(name);
+    if (!value)
+    {
+        return fallback;
+    }
+    int number = 0;
+    const char *last = value->data() + value->size();
+    const auto [end, error] = std::from_chars(value->data(), last, number);
+    if (error != std::errc{} || end != last || number <= 0)
+    {
+        throw std::runtime_error(std::format("{}: ожидается целое число от 1 до {}, получено '{}'",
+                                             name, std::numeric_limits<int>::max(), *value));
+    }
+    return number;
+}
+
+MlConfig readMl()
+{
+    MlConfig ml;
+    ml.url = readUrl("ML_URL", env("ML_URL").value_or(ml.url));
+    ml.maxConcurrent = static_cast<std::size_t>(
+        readPositiveInt("ML_MAX_CONCURRENT", static_cast<int>(ml.maxConcurrent)));
+    ml.imageTimeout = std::chrono::milliseconds(
+        readPositiveInt("ML_IMAGE_TIMEOUT_MS", static_cast<int>(ml.imageTimeout.count())));
+    ml.videoTimeout = std::chrono::milliseconds(
+        readPositiveInt("ML_VIDEO_TIMEOUT_MS", static_cast<int>(ml.videoTimeout.count())));
+    ml.failuresToOpen = readPositiveInt("ML_FAILURES_TO_OPEN", ml.failuresToOpen);
+    ml.openFor = std::chrono::milliseconds(
+        readPositiveInt("ML_OPEN_FOR_MS", static_cast<int>(ml.openFor.count())));
+    return ml;
+}
 }  // namespace
 
 Config loadConfig()
@@ -104,5 +140,6 @@ Config loadConfig()
         .google = {.clientId = std::string(env("OIDC_GOOGLE_CLIENT_ID").value_or("")),
                    .clientSecret = std::string(env("OIDC_GOOGLE_CLIENT_SECRET").value_or(""))},
         .vk = {.clientId = std::string(env("OIDC_VK_CLIENT_ID").value_or(""))},
+        .ml = readMl(),
     };
 }
