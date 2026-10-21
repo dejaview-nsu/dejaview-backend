@@ -84,6 +84,8 @@ jobs:
         with:
           path: ~/.conan2
           key: conan-${{ runner.os }}-gcc14-${{ hashFiles('conanfile.txt', 'conan.lock') }}
+          # новая зависимость - поднимаем прежний кэш, Conan соберёт только недостающее
+          restore-keys: conan-${{ runner.os }}-gcc14-
 
       - name: Install dependencies
         run: |
