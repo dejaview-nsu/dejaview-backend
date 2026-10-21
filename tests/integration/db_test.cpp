@@ -1,6 +1,7 @@
 #include "integration/db_test.hpp"
 
 #include "auth/crypto.hpp"
+#include "search/search.hpp"
 
 #include <drogon/drogon.h>
 #include <libpq-fe.h>
@@ -104,6 +105,9 @@ const std::string &fakeServer()
         std::promise<std::uint16_t> port;
         app()
             .addListener("127.0.0.1", 0)
+            // умолчание Drogon - 1 МБ: фейк принимает всё, что пропускает настоящий сервер
+            // (main.cpp)
+            .setClientMaxBodySize(kMaxSearchBodyBytes)
             .registerBeginningAdvice([&port] { port.set_value(app().getListeners()[0].toPort()); })
             // advice до маршрутизации видит любой путь: обработчики регистрировать не нужно
             .registerPreRoutingAdvice(
