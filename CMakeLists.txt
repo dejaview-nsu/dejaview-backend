@@ -60,6 +60,7 @@ add_library(dejaview-core STATIC
     src/search/magic_mime.cpp
     src/search/ml_client.cpp
     src/search/ml_reply.cpp
+    src/search/mp4_tracks.cpp
     src/search/query.cpp
     src/search/rules.cpp
     src/search/search.cpp)
@@ -67,6 +68,15 @@ target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
 target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl
                       ICU::uc libmagic)
+
+# Санитайзеры (ASan + UBSan): чтение за границей, переполнение и UB роняют тест, а не проходят
+# молча. Отдельная сборка в build-sanitize - docs/code.md
+option(DEJAVIEW_SANITIZE "Код и тесты с ASan и UBSan" OFF)
+if(DEJAVIEW_SANITIZE)
+    set(SANITIZE_FLAGS -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    target_compile_options(dejaview-core PUBLIC ${SANITIZE_FLAGS})
+    target_link_options(dejaview-core PUBLIC ${SANITIZE_FLAGS})
+endif()
 
 add_executable(dejaview-backend src/main.cpp)
 target_link_libraries(dejaview-backend PRIVATE dejaview-core)
@@ -86,6 +96,7 @@ add_executable(dejaview-tests
     tests/search/circuit_breaker_test.cpp
     tests/search/errors_test.cpp
     tests/search/ml_reply_test.cpp
+    tests/search/mp4_tracks_test.cpp
     tests/search/query_test.cpp
     tests/search/rules_test.cpp
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
@@ -108,11 +119,29 @@ include(GoogleTest)
 gtest_discover_tests(dejaview-tests)
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure DEPENDS dejaview-tests)
 
+# Фаззинг разбора чужих файлов (libFuzzer есть только в Clang) - в сборке с санитайзерами.
+# Разбор собирается прямо в фаззер: libFuzzer нужно инструментировать именно проверяемый код.
+# cmake --build build-sanitize --target fuzz - 15 минут, начальный корпус - образцы из tests/data
+if(DEJAVIEW_SANITIZE AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_executable(mp4-tracks-fuzz tests/fuzz/mp4_tracks_fuzz.cpp src/search/mp4_tracks.cpp)
+    target_compile_features(mp4-tracks-fuzz PRIVATE cxx_std_23)
+    target_include_directories(mp4-tracks-fuzz PRIVATE src)
+    target_compile_options(mp4-tracks-fuzz PRIVATE -fsanitize=fuzzer ${SANITIZE_FLAGS})
+    target_link_options(mp4-tracks-fuzz PRIVATE -fsanitize=fuzzer ${SANITIZE_FLAGS})
+    add_custom_target(fuzz
+        COMMAND ${CMAKE_COMMAND} -E make_directory fuzz-corpus/mp4-tracks
+        COMMAND mp4-tracks-fuzz -max_total_time=900 fuzz-corpus/mp4-tracks
+                ${CMAKE_SOURCE_DIR}/tests/data/search
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        DEPENDS mp4-tracks-fuzz
+        VERBATIM)
+endif()
+
 # Покрытие тестами (#17098 п. 1) - только в Clang-сборке: gcov из GCC не видит тел корутин
 # (Task<...>), а это почти все обработчики. Как собрать - docs/code.md. В Debug код приложения
 # собирается с --coverage и при работе записывает, какие строки выполнились. Отчёт:
 # cmake --build build-coverage --target coverage, по строкам - build-coverage/coverage/index.html
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT DEJAVIEW_SANITIZE)
     target_compile_options(dejaview-core PRIVATE $<$<CONFIG:Debug>:--coverage>)
     target_link_options(dejaview-core PUBLIC $<$<CONFIG:Debug>:--coverage>)
     # gcovr читает счётчики Clang через llvm-cov той же версии, что и компилятор

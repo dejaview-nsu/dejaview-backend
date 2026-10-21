@@ -1,6 +1,7 @@
 .env
 build/
 build-coverage/
+build-sanitize/
 CMakeUserPresets.json
 .cache/
 .DS_Store
