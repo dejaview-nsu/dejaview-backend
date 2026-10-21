@@ -118,6 +118,10 @@ MlConfig readMl()
         readPositiveInt("ML_IMAGE_TIMEOUT_MS", static_cast<int>(ml.imageTimeout.count())));
     ml.videoTimeout = std::chrono::milliseconds(
         readPositiveInt("ML_VIDEO_TIMEOUT_MS", static_cast<int>(ml.videoTimeout.count())));
+    ml.audioTimeout = std::chrono::milliseconds(
+        readPositiveInt("ML_AUDIO_TIMEOUT_MS", static_cast<int>(ml.audioTimeout.count())));
+    ml.textTimeout = std::chrono::milliseconds(
+        readPositiveInt("ML_TEXT_TIMEOUT_MS", static_cast<int>(ml.textTimeout.count())));
     ml.failuresToOpen = readPositiveInt("ML_FAILURES_TO_OPEN", ml.failuresToOpen);
     ml.openFor = std::chrono::milliseconds(
         readPositiveInt("ML_OPEN_FOR_MS", static_cast<int>(ml.openFor.count())));

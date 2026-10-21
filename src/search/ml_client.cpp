@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <utility>
 
 using namespace drogon;
 
@@ -137,7 +138,34 @@ HttpRequestPtr newRequest(HttpMethod method, const std::string &path, const std:
 
 std::string searchPath(MediaKind kind)
 {
-    return kind == MediaKind::Image ? "/v1/search/image" : "/v1/search/video";
+    switch (kind)
+    {
+        case MediaKind::Image:
+            return "/v1/search/image";
+        case MediaKind::Video:
+            return "/v1/search/video";
+        case MediaKind::Audio:
+            return "/v1/search/audio";
+        case MediaKind::Text:
+            return "/v1/search/text";
+    }
+    std::unreachable();
+}
+
+std::chrono::milliseconds timeoutFor(const MlConfig &config, MediaKind kind)
+{
+    switch (kind)
+    {
+        case MediaKind::Image:
+            return config.imageTimeout;
+        case MediaKind::Video:
+            return config.videoTimeout;
+        case MediaKind::Audio:
+            return config.audioTimeout;
+        case MediaKind::Text:
+            return config.textTimeout;
+    }
+    std::unreachable();
 }
 
 Task<bool> isHealthy(std::string url, std::string requestId, double timeoutSeconds)
@@ -219,9 +247,7 @@ Task<SearchResult> searchMl(std::shared_ptr<MlService> ml, MediaKind kind, std::
     const SlotGuard slot(ml->slots);
 
     // Один срок на всё: проверка /health съедает его часть, на POST остаётся остаток
-    const Clock::time_point deadline =
-        Clock::now() +
-        (kind == MediaKind::Image ? ml->config.imageTimeout : ml->config.videoTimeout);
+    const Clock::time_point deadline = Clock::now() + timeoutFor(ml->config, kind);
 
     switch (ml->breaker.gate(Clock::now()))
     {
