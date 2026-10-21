@@ -17,8 +17,7 @@ struct Query
     std::size_t length;     // в символах Unicode (кодовых точках)
 };
 
-// Не UTF-8 или пусто после обрезки -> QueryEmpty, затем
-// QueryTooShort, затем QueryTooLong
+// Не UTF-8 или пусто после обрезки -> QueryEmpty, затем QueryTooShort, затем QueryTooLong
 [[nodiscard]] std::expected<Query, SearchError> checkQuery(std::string_view raw);
 
 // ML сам посчитал запрос неверным: это расхождение в подсчёте длины, берём ближайшую границу

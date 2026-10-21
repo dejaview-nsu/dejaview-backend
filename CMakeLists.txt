@@ -167,6 +167,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT DEJAVIEW_SANITIZE)
         VERBATIM)
 else()
     add_custom_target(coverage
-        COMMAND ${CMAKE_COMMAND} -E echo "Покрытие считается в Clang-сборке: см. docs/code.md"
+        COMMAND ${CMAKE_COMMAND} -E echo "Покрытие считается в Clang-сборке без санитайзеров: см. docs/code.md"
         COMMAND ${CMAKE_COMMAND} -E false)
 endif()
