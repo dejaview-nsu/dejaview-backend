@@ -435,6 +435,17 @@ TEST(IsAudioOnlyMp4Test, RejectsRealVideoAndImageSamples)
     EXPECT_FALSE(isAudioOnlyMp4(readSample("image.png")));
 }
 
+TEST(IsAudioOnlyMp4Test, AcceptsRealAudioOnlySamples)
+{
+    EXPECT_TRUE(isAudioOnlyMp4(readSample("audio.m4a")));
+    EXPECT_TRUE(isAudioOnlyMp4(readSample("audio-isom.m4a")));
+}
+
+TEST(IsAudioOnlyMp4Test, RejectsRealVideoWithSoundSample)
+{
+    EXPECT_FALSE(isAudioOnlyMp4(readSample("reject-av.mp4")));
+}
+
 TEST(IsAudioOnlyMp4Test, RejectsRandomBytes)
 {
     std::mt19937 generator(12345);
