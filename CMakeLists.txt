@@ -10,6 +10,7 @@ find_package(GTest CONFIG REQUIRED)
 find_package(PostgreSQL CONFIG REQUIRED)
 find_package(libsodium CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
+find_package(ICU CONFIG REQUIRED)
 
 # libmagic системная (apt: libmagic-dev, в образе libmagic1t64 с базой правил), не из Conan:
 # база правил - файл системы, и на всех стадиях Docker одна Ubuntu. pkg-config в образах нет
@@ -59,12 +60,13 @@ add_library(dejaview-core STATIC
     src/search/magic_mime.cpp
     src/search/ml_client.cpp
     src/search/ml_reply.cpp
+    src/search/query.cpp
     src/search/rules.cpp
     src/search/search.cpp)
 target_compile_features(dejaview-core PUBLIC cxx_std_23)
 target_include_directories(dejaview-core PUBLIC src)
 target_link_libraries(dejaview-core PUBLIC Drogon::Drogon libsodium::libsodium CURL::libcurl
-                      libmagic)
+                      ICU::uc libmagic)
 
 add_executable(dejaview-backend src/main.cpp)
 target_link_libraries(dejaview-backend PRIVATE dejaview-core)
@@ -84,6 +86,7 @@ add_executable(dejaview-tests
     tests/search/circuit_breaker_test.cpp
     tests/search/errors_test.cpp
     tests/search/ml_reply_test.cpp
+    tests/search/query_test.cpp
     tests/search/rules_test.cpp
     # интеграционные: с БД из TEST_DATABASE_URL, без неё пропускаются (tests/integration/db_test.hpp)
     tests/integration/db_test.cpp

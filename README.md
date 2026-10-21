@@ -40,7 +40,7 @@ docker compose up --build
 
 `docker compose up --build` собирает образ (стадии описаны в `Dockerfile`), прогоняет модульные
 тесты (упавший тест останавливает сборку) и запускает сервер. Остановить - `Ctrl+C`; в фоне -
-добавить `-d`, остановить - `docker compose down`. Первая сборка ~5 минут (Conan собирает Drogon),
+добавить `-d`, остановить - `docker compose down`. Первая сборка ~10 минут (Conan собирает Drogon и ICU),
 дальше - секунды.
 
 Проверка: `curl localhost:8081/health` → `{"database":"ok","status":"ok"}`, код 200.
