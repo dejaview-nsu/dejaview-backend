@@ -312,10 +312,10 @@ TEST_F(MlClientTest, MapsMlClientErrors)
     expectError(image(service()), SearchError::UnsupportedFormat);
 }
 
-TEST_F(MlClientTest, MapsVideoTooLongForVideo)
+TEST_F(MlClientTest, MapsDurationTooLongForVideo)
 {
     fakeReply(kVideoPath, k422UnprocessableEntity, R"({"code":"DURATION_TOO_LONG"})");
-    expectError(video(service()), SearchError::VideoTooLong);
+    expectError(video(service()), SearchError::DurationTooLong);
 }
 
 TEST_F(MlClientTest, MapsServerErrorsAndMissingEndpointToUnavailable)
