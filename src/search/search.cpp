@@ -20,7 +20,7 @@ HttpResponsePtr searchErrorResponse(MediaKind kind, SearchError error)
 {
     const ErrorReply reply = errorReply(kind, error);
     return errorResponse(static_cast<HttpStatusCode>(reply.status), std::string(reply.code),
-                         std::string(reply.message), reply.fileField ? "file" : "");
+                         std::string(reply.message), std::string(reply.field));
 }
 
 HttpResponsePtr resultsResponse(Json::Value results)

@@ -51,7 +51,11 @@ SearchError clientError(const Json::Value *body)
     }
     if (code == "DURATION_TOO_LONG")
     {
-        return SearchError::VideoTooLong;
+        return SearchError::DurationTooLong;
+    }
+    if (code == "INVALID_QUERY")
+    {
+        return SearchError::InvalidQuery;
     }
     return SearchError::Unavailable;
 }

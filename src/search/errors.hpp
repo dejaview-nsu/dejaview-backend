@@ -7,7 +7,9 @@
 enum class MediaKind
 {
     Image,
-    Video
+    Video,
+    Audio,
+    Text
 };
 
 enum class SearchError
@@ -16,8 +18,12 @@ enum class SearchError
     TooManyFiles,
     FileTooLarge,
     UnsupportedFormat,
-    VideoTooLong,
+    DurationTooLong,
     FileCorrupted,
+    QueryEmpty,
+    QueryTooShort,
+    QueryTooLong,
+    InvalidQuery,
     Unavailable,
     Busy
 };
@@ -27,10 +33,12 @@ struct ErrorReply
     int status;
     std::string_view code;
     std::string_view message;
-    bool fileField;
+    std::string_view field;
 };
 
-// ML может прислать DURATION_TOO_LONG и для картинки; у эндпоинта картинки такой ошибки нет
+// ML может прислать ошибку, которой нет в таблице эндпоинта (DURATION_TOO_LONG для картинки,
+// файловую для текста): это не авария, а 503. InvalidQuery остаётся только у текста - её
+// превращает в QueryTooShort/QueryTooLong обработчик текста
 [[nodiscard]] SearchError forKind(MediaKind kind, SearchError error);
 
 [[nodiscard]] ErrorReply errorReply(MediaKind kind, SearchError error);
