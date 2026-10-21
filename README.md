@@ -61,7 +61,7 @@ docker compose up --build
 | `SMTP_URL` | да | - | почтовый сервер: `smtps://smtp.example.ru:465` (TLS), локально `smtp://host.docker.internal:1025` (Mailpit) |
 | `SMTP_FROM` | да | - | адрес отправителя писем: `noreply@dejaview.ru` |
 | `SMTP_USER`, `SMTP_PASSWORD` | нет | - | учётные данные SMTP; не заданы - без авторизации |
-| `ML_URL` | нет | `http://ml:8000` | адрес ML-сервиса поиска по изображению и видео |
+| `ML_URL` | нет | `http://ml:8000` | адрес ML-сервиса поиска по изображению, видео, аудио и тексту |
 | `ML_MAX_CONCURRENT` | нет | `4` | сколько обращений к ML одновременно на экземпляр (>= 1); сверх лимита - 503 SERVER_BUSY |
 | `ML_IMAGE_TIMEOUT_MS`, `ML_VIDEO_TIMEOUT_MS`, `ML_AUDIO_TIMEOUT_MS`, `ML_TEXT_TIMEOUT_MS` | нет | `9000`, `14000`, `14000`, `4000` | общий срок вызова ML для изображения, видео, аудио и текста, включая проверку `/health`; соединение - не дольше 1 с |
 | `ML_FAILURES_TO_OPEN`, `ML_OPEN_FOR_MS` | нет | `5`, `30000` | сколько сбоев ML подряд отключают вызовы и на сколько (backend-ml.md, разд. 5) |

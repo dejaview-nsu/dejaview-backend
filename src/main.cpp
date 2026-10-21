@@ -142,5 +142,9 @@ int main()
                          { return mediaSearchHandler(db, ml, MediaKind::Image, req); }, {Post})
         .registerHandler("/api/v1/search/video", [db, ml](HttpRequestPtr req)
                          { return mediaSearchHandler(db, ml, MediaKind::Video, req); }, {Post})
+        .registerHandler("/api/v1/search/audio", [db, ml](HttpRequestPtr req)
+                         { return mediaSearchHandler(db, ml, MediaKind::Audio, req); }, {Post})
+        .registerHandler("/api/v1/search/text", [db, ml](HttpRequestPtr req)
+                         { return textSearchHandler(db, ml, req); }, {Post})
         .run();
 }

@@ -1,11 +1,14 @@
 #include "search/search.hpp"
 
+#include "auth/http_common.hpp"
 #include "auth/session.hpp"
 #include "error_response.hpp"
+#include "search/query.hpp"
 
 #include <drogon/MultiPart.h>
 #include <drogon/drogon.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -30,32 +33,64 @@ HttpResponsePtr resultsResponse(Json::Value results)
     return HttpResponse::newHttpJsonResponse(body);
 }
 
-// Карточка фильма из movies; пустой массив, если строки нет (контракт: такой фильм отбрасывается)
-Task<Json::Value> movieCard(orm::DbClientPtr db, std::int64_t movieId, std::string requestId)
+// Сколько карточек отдаёт поиск: по тексту до 10 (openapi.yaml), по файлу - самую релевантную
+std::size_t maxResults(MediaKind kind)
 {
-    const auto rows = co_await db->execSqlCoro(
-        "SELECT movie_id, title, EXTRACT(YEAR FROM release_date)::int AS year, poster_path, "
-        "overview FROM movies WHERE movie_id = $1",
-        movieId);
-    Json::Value results(Json::arrayValue);
-    if (rows.empty())
+    constexpr std::size_t kTextResults = 10;
+    return kind == MediaKind::Text ? kTextResults : 1;
+}
+
+// Карточки фильмов из movies одним запросом в порядке ids; фильмы, которых нет в базе,
+// отбрасываются (контракт)
+Task<Json::Value> movieCards(orm::DbClientPtr db, std::vector<std::int64_t> ids,
+                             std::string requestId)
+{
+    std::string idArray = "{";
+    for (const std::int64_t id : ids)
     {
-        LOG_WARN << "поиск: фильма " << movieId << " нет в movies [X-Request-Id " << requestId
-                 << "]";
-        co_return results;
+        idArray += (idArray.size() > 1 ? "," : "") + std::to_string(id);
     }
-    const auto &row = rows.front();
-    Json::Value card;
-    card["movie_id"] = Json::Int64(row["movie_id"].as<std::int64_t>());
-    card["title"] = row["title"].as<std::string>();
-    card["year"] = row["year"].isNull() ? Json::Value() : Json::Value(row["year"].as<int>());
-    card["poster_url"] = row["poster_path"].isNull()
-                             ? Json::Value()
-                             : Json::Value(kPosterBaseUrl + row["poster_path"].as<std::string>());
-    card["overview"] =
-        row["overview"].isNull() ? Json::Value() : Json::Value(row["overview"].as<std::string>());
-    results.append(std::move(card));
+    idArray += "}";
+    const auto rows = co_await db->execSqlCoro(
+        "SELECT m.movie_id, m.title, EXTRACT(YEAR FROM m.release_date)::int AS year, "
+        "m.poster_path, m.overview "
+        "FROM unnest($1::bigint[]) WITH ORDINALITY AS found(movie_id, position) "
+        "JOIN movies m ON m.movie_id = found.movie_id ORDER BY found.position",
+        idArray);
+    if (rows.size() < ids.size())
+    {
+        LOG_WARN << "поиск: в movies нет " << ids.size() - rows.size() << " из " << ids.size()
+                 << " найденных фильмов [X-Request-Id " << requestId << "]";
+    }
+    Json::Value results(Json::arrayValue);
+    for (const auto &row : rows)
+    {
+        Json::Value card;
+        card["movie_id"] = Json::Int64(row["movie_id"].as<std::int64_t>());
+        card["title"] = row["title"].as<std::string>();
+        card["year"] = row["year"].isNull() ? Json::Value() : Json::Value(row["year"].as<int>());
+        card["poster_url"] =
+            row["poster_path"].isNull()
+                ? Json::Value()
+                : Json::Value(kPosterBaseUrl + row["poster_path"].as<std::string>());
+        card["overview"] = row["overview"].isNull()
+                               ? Json::Value()
+                               : Json::Value(row["overview"].as<std::string>());
+        results.append(std::move(card));
+    }
     co_return results;
+}
+
+// Ответ 200 по id от ML: не больше maxResults(kind), пусто - results: []
+Task<HttpResponsePtr> cardsResponse(orm::DbClientPtr db, MediaKind kind,
+                                    std::vector<std::int64_t> ids, std::string requestId)
+{
+    ids.resize(std::min(ids.size(), maxResults(kind)));
+    if (ids.empty())
+    {
+        co_return resultsResponse(Json::Value(Json::arrayValue));
+    }
+    co_return resultsResponse(co_await movieCards(db, std::move(ids), requestId));
 }
 
 }  // namespace
@@ -92,9 +127,31 @@ Task<HttpResponsePtr> mediaSearchHandler(orm::DbClientPtr db, std::shared_ptr<Ml
     {
         co_return searchErrorResponse(kind, ids.error());
     }
-    if (ids->empty())
+    co_return co_await cardsResponse(db, kind, *ids, requestId);
+}
+
+Task<HttpResponsePtr> textSearchHandler(orm::DbClientPtr db, std::shared_ptr<MlService> ml,
+                                        HttpRequestPtr req)
+{
+    // Нет тела, не JSON-объект или нет строки query - запрос не получен
+    const Json::Value *json = jsonBody(req);
+    const std::string raw = json == nullptr ? "" : stringField(*json, "query");
+    const auto query = checkQuery(raw);
+    if (!query)
     {
-        co_return resultsResponse(Json::Value(Json::arrayValue));
+        co_return searchErrorResponse(MediaKind::Text, query.error());
     }
-    co_return resultsResponse(co_await movieCard(db, ids->front(), requestId));
+
+    // В ML уходит обрезанный запрос: его длину ML и проверяет
+    Json::Value mlBody;
+    mlBody["query"] = std::string(query->text);
+    const std::string requestId = utils::getUuid();
+    const auto ids = co_await searchMl(ml, MediaKind::Text, "application/json",
+                                       mlBody.toStyledString(), requestId);
+    if (!ids)
+    {
+        co_return searchErrorResponse(MediaKind::Text,
+                                      resolveInvalidQuery(ids.error(), query->length));
+    }
+    co_return co_await cardsResponse(db, MediaKind::Text, *ids, requestId);
 }
