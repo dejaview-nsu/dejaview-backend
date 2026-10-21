@@ -1,14 +1,69 @@
 #include "search/rules.hpp"
 
 #include <array>
+#include <span>
+#include <stdexcept>
+#include <utility>
 
 #include "search/magic_mime.hpp"
+#include "search/mp4_tracks.hpp"
 
 namespace
 {
 
-constexpr std::array<std::string_view, 3> kImageTypes{"image/jpeg", "image/png", "image/webp"};
-constexpr std::array<std::string_view, 3> kVideoTypes{"video/mp4", "video/quicktime", "video/webm"};
+// detected - ответ libmagic, sent - что backend отправляет в ML (backend-ml.md)
+struct MimeRule
+{
+    std::string_view detected;
+    std::string_view sent;
+};
+
+constexpr std::array<MimeRule, 3> kImageTypes{
+    {{"image/jpeg", "image/jpeg"}, {"image/png", "image/png"}, {"image/webp", "image/webp"}}};
+constexpr std::array<MimeRule, 3> kVideoTypes{{{"video/mp4", "video/mp4"},
+                                               {"video/quicktime", "video/quicktime"},
+                                               {"video/webm", "video/webm"}}};
+// Все варианты M4A уходят в ML как audio/mp4
+constexpr std::array<MimeRule, 5> kAudioTypes{{{"audio/mpeg", "audio/mpeg"},
+                                               {"audio/x-wav", "audio/wav"},
+                                               {"audio/ogg", "audio/ogg"},
+                                               {"audio/x-m4a", "audio/mp4"},
+                                               {"audio/mp4", "audio/mp4"}}};
+
+// M4A с брендом isom/mp42 libmagic называет video/mp4: аудио, только если видеодорожек нет
+constexpr MimeRule kAudioOnlyMp4{"video/mp4", "audio/mp4"};
+
+std::span<const MimeRule> rulesFor(MediaKind kind)
+{
+    switch (kind)
+    {
+        case MediaKind::Image:
+            return kImageTypes;
+        case MediaKind::Video:
+            return kVideoTypes;
+        case MediaKind::Audio:
+            return kAudioTypes;
+        case MediaKind::Text:
+            return {};
+    }
+    std::unreachable();
+}
+
+std::size_t limitFor(MediaKind kind)
+{
+    switch (kind)
+    {
+        case MediaKind::Image:
+            return kMaxImageBytes;
+        case MediaKind::Video:
+            return kMaxVideoBytes;
+        case MediaKind::Audio:
+            return kMaxAudioBytes;
+        case MediaKind::Text:
+            break;
+    }
+    std::unreachable();
+}
 
 }  // namespace
 
@@ -19,13 +74,17 @@ std::optional<std::string_view> detectMediaType(MediaKind kind, std::string_view
     {
         return std::nullopt;
     }
-    // Возвращаем строку из списка, не из libmagic: она живёт дольше вызова
-    for (const std::string_view allowed : kind == MediaKind::Image ? kImageTypes : kVideoTypes)
+    // Возвращаем строку из таблицы, не из libmagic: она живёт дольше вызова
+    for (const MimeRule &rule : rulesFor(kind))
     {
-        if (*detected == allowed)
+        if (*detected == rule.detected)
         {
-            return allowed;
+            return rule.sent;
         }
+    }
+    if (kind == MediaKind::Audio && *detected == kAudioOnlyMp4.detected && isAudioOnlyMp4(content))
+    {
+        return kAudioOnlyMp4.sent;
     }
     return std::nullopt;
 }
@@ -33,6 +92,10 @@ std::optional<std::string_view> detectMediaType(MediaKind kind, std::string_view
 std::expected<Upload, SearchError> checkUpload(MediaKind kind,
                                                std::span<const std::string_view> files)
 {
+    if (kind == MediaKind::Text)
+    {
+        throw std::invalid_argument("checkUpload: у текстового поиска нет файла");
+    }
     std::size_t count = 0;
     std::string_view content;
     for (const std::string_view file : files)
@@ -51,8 +114,7 @@ std::expected<Upload, SearchError> checkUpload(MediaKind kind,
     {
         return std::unexpected(SearchError::TooManyFiles);
     }
-    const std::size_t limit = kind == MediaKind::Image ? kMaxImageBytes : kMaxVideoBytes;
-    if (content.size() > limit)
+    if (content.size() > limitFor(kind))
     {
         return std::unexpected(SearchError::FileTooLarge);
     }
