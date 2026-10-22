@@ -107,7 +107,61 @@ TEST(ParseMlReplyTest, MapsFileCorruptedForBothKinds)
 TEST(ParseMlReplyTest, MapsDurationTooLongForVideo)
 {
     expectFailure(parse(MediaKind::Video, 422, R"({"code":"DURATION_TOO_LONG"})"),
-                  SearchError::VideoTooLong, false);
+                  SearchError::DurationTooLong, false);
+}
+
+TEST(ParseMlReplyTest, MapsDurationTooLongForAudio)
+{
+    expectFailure(parse(MediaKind::Audio, 422, R"({"code":"DURATION_TOO_LONG"})"),
+                  SearchError::DurationTooLong, false);
+}
+
+TEST(ParseMlReplyTest, MapsFileErrorsForAudio)
+{
+    expectFailure(parse(MediaKind::Audio, 422, R"({"code":"FILE_CORRUPTED"})"),
+                  SearchError::FileCorrupted, false);
+    expectFailure(parse(MediaKind::Audio, 413, R"({"code":"FILE_TOO_LARGE"})"),
+                  SearchError::FileTooLarge, false);
+    expectFailure(parse(MediaKind::Audio, 415, R"({"code":"UNSUPPORTED_MEDIA_TYPE"})"),
+                  SearchError::UnsupportedFormat, false);
+}
+
+TEST(ParseMlReplyTest, MapsInvalidQueryForText)
+{
+    expectFailure(parse(MediaKind::Text, 422, R"({"code":"INVALID_QUERY"})"),
+                  SearchError::InvalidQuery, false);
+}
+
+TEST(ParseMlReplyTest, InvalidQueryForFileKindsIsUnavailable)
+{
+    for (const MediaKind kind : {MediaKind::Image, MediaKind::Video, MediaKind::Audio})
+    {
+        expectFailure(parse(kind, 422, R"({"code":"INVALID_QUERY"})"), SearchError::Unavailable,
+                      false);
+    }
+}
+
+TEST(ParseMlReplyTest, FileErrorsForTextAreUnavailable)
+{
+    expectFailure(parse(MediaKind::Text, 415, R"({"code":"UNSUPPORTED_MEDIA_TYPE"})"),
+                  SearchError::Unavailable, false);
+    expectFailure(parse(MediaKind::Text, 422, R"({"code":"FILE_CORRUPTED"})"),
+                  SearchError::Unavailable, false);
+    expectFailure(parse(MediaKind::Text, 422, R"({"code":"DURATION_TOO_LONG"})"),
+                  SearchError::Unavailable, false);
+}
+
+TEST(ParseMlReplyTest, TextReturnsTenIdsInOrder)
+{
+    const auto result = parse(MediaKind::Text, 200, R"({"movie_ids":[10,9,8,7,6,5,4,3,2,1]})");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, (std::vector<std::int64_t>{10, 9, 8, 7, 6, 5, 4, 3, 2, 1}));
+}
+
+TEST(ParseMlReplyTest, TextNotReadyIsOutage)
+{
+    expectFailure(parse(MediaKind::Text, 503, R"({"code":"NOT_READY"})"), SearchError::Unavailable,
+                  true);
 }
 
 TEST(ParseMlReplyTest, MapsDurationTooLongForImageToUnavailable)

@@ -30,6 +30,11 @@ const std::string kImageBytes = "image-bytes";
 const std::string kVideoBytes = "video-bytes";
 const std::string kImagePath = "/v1/search/image";
 const std::string kVideoPath = "/v1/search/video";
+const std::string kAudioBytes = "audio-bytes";
+const std::string kTextPath = "/v1/search/text";
+const std::string kAudioPath = "/v1/search/audio";
+const std::string kTextBody = R"({"query":"abc"})";
+const std::string kTenIdsBody = R"({"movie_ids":[1,2,3,4,5,6,7,8,9,10]})";
 const std::string kFoundBody = R"({"movie_ids":[603]})";
 const std::vector<std::int64_t> kFound{603};
 
@@ -237,6 +242,18 @@ class MlClientTest : public DbTest
         config.url = fakeUrl;
         config.imageTimeout = 3000ms;
         config.videoTimeout = 3000ms;
+        config.textTimeout = 3000ms;
+        config.audioTimeout = 3000ms;
+    }
+
+    static Result text(const std::shared_ptr<MlService> &ml, std::string body = kTextBody)
+    {
+        return run(searchMl(ml, MediaKind::Text, "application/json", std::move(body), "req-1"));
+    }
+
+    static Result audio(const std::shared_ptr<MlService> &ml)
+    {
+        return run(searchMl(ml, MediaKind::Audio, "audio/mpeg", kAudioBytes, "req-1"));
     }
 
     std::shared_ptr<MlService> service() { return std::make_shared<MlService>(config); }
@@ -312,10 +329,10 @@ TEST_F(MlClientTest, MapsMlClientErrors)
     expectError(image(service()), SearchError::UnsupportedFormat);
 }
 
-TEST_F(MlClientTest, MapsVideoTooLongForVideo)
+TEST_F(MlClientTest, MapsDurationTooLongForVideo)
 {
     fakeReply(kVideoPath, k422UnprocessableEntity, R"({"code":"DURATION_TOO_LONG"})");
-    expectError(video(service()), SearchError::VideoTooLong);
+    expectError(video(service()), SearchError::DurationTooLong);
 }
 
 TEST_F(MlClientTest, MapsServerErrorsAndMissingEndpointToUnavailable)
@@ -551,4 +568,133 @@ TEST_F(MlClientTest, CompletesWhenCallerGivesUpTheOnlyOwner)
     replyImage(k200OK, kFoundBody);
     expectFound(run(searchMl(std::make_shared<MlService>(config), MediaKind::Image, "image/png",
                              kImageBytes, "req-1")));
+}
+
+TEST_F(MlClientTest, ReturnsTenMovieIdsInOrderForText)
+{
+    fakeReply(kTextPath, k200OK, kTenIdsBody);
+    const auto result = text(service());
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, (std::vector<std::int64_t>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
+}
+
+TEST_F(MlClientTest, SendsTextAsJsonToTextEndpoint)
+{
+    fakeReply(kTextPath, k200OK, kTenIdsBody);
+    ASSERT_TRUE(text(service()).has_value());
+
+    const auto received = fakeReceived(kTextPath);
+    ASSERT_NE(received, nullptr);
+    EXPECT_EQ(received->method(), Post);
+    EXPECT_EQ(received->getHeader("content-type"), "application/json");
+    EXPECT_EQ(received->getHeader("x-request-id"), "req-1");
+    EXPECT_EQ(std::string(received->body()), kTextBody);
+    EXPECT_EQ(fakeReceived(kImagePath), nullptr);
+}
+
+TEST_F(MlClientTest, SendsAudioBytesToAudioEndpoint)
+{
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    expectFound(audio(service()));
+
+    const auto received = fakeReceived(kAudioPath);
+    ASSERT_NE(received, nullptr);
+    EXPECT_EQ(received->method(), Post);
+    EXPECT_EQ(received->getHeader("content-type"), "audio/mpeg");
+    EXPECT_EQ(received->getHeader("x-request-id"), "req-1");
+    EXPECT_EQ(std::string(received->body()), kAudioBytes);
+    EXPECT_EQ(fakeReceived(kImagePath), nullptr);
+    EXPECT_EQ(fakeReceived(kVideoPath), nullptr);
+}
+
+TEST_F(MlClientTest, MapsDurationTooLongForAudio)
+{
+    fakeReply(kAudioPath, k422UnprocessableEntity, R"({"code":"DURATION_TOO_LONG"})");
+    expectError(audio(service()), SearchError::DurationTooLong);
+}
+
+TEST_F(MlClientTest, MapsInvalidQueryForText)
+{
+    fakeReply(kTextPath, k422UnprocessableEntity, R"({"code":"INVALID_QUERY"})");
+    expectError(text(service()), SearchError::InvalidQuery);
+}
+
+TEST_F(MlClientTest, TimesOutTextByTextTimeoutWithoutRetry)
+{
+    Listener hung;
+    config.url = hung.url();
+    config.textTimeout = 300ms;
+
+    const auto start = SteadyClock::now();
+    expectError(text(service()), SearchError::Unavailable);
+    const auto elapsed = SteadyClock::now() - start;
+
+    EXPECT_GE(elapsed, 300ms);
+    EXPECT_LT(elapsed, 2s);
+    EXPECT_EQ(hung.acceptPending(), 1);
+}
+
+TEST_F(MlClientTest, TimesOutAudioByAudioTimeout)
+{
+    Listener hung;
+    config.url = hung.url();
+    config.audioTimeout = 300ms;
+
+    const auto start = SteadyClock::now();
+    expectError(audio(service()), SearchError::Unavailable);
+    const auto elapsed = SteadyClock::now() - start;
+
+    EXPECT_GE(elapsed, 300ms);
+    EXPECT_LT(elapsed, 2s);
+}
+
+TEST_F(MlClientTest, ReportsUnavailableForTextWhenConnectionIsRefused)
+{
+    config.url = "http://127.0.0.1:1";
+    expectError(text(service()), SearchError::Unavailable);
+}
+
+TEST_F(MlClientTest, TextOutagesOpenTheSharedBreakerForImages)
+{
+    config.failuresToOpen = 5;
+    config.openFor = 1h;
+    const auto ml = service();
+    fakeReply(kTextPath, k500InternalServerError, "{}");
+    for (int i = 0; i < config.failuresToOpen; ++i)
+    {
+        expectError(text(ml), SearchError::Unavailable);
+    }
+
+    replyImage(k200OK, kFoundBody);
+    expectError(image(ml), SearchError::Unavailable);
+    EXPECT_EQ(fakeReceived(kImagePath), nullptr);
+}
+
+TEST_F(MlClientTest, TextClientErrorsDoNotOpenBreaker)
+{
+    config.failuresToOpen = 5;
+    config.openFor = 1h;
+    const auto ml = service();
+    fakeReply(kTextPath, k422UnprocessableEntity, R"({"code":"INVALID_QUERY"})");
+    for (int i = 0; i < 6; ++i)
+    {
+        expectError(text(ml), SearchError::InvalidQuery);
+    }
+
+    fakeReply(kTextPath, k200OK, kTenIdsBody);
+    EXPECT_TRUE(text(ml).has_value());
+}
+
+TEST_F(MlClientTest, ReturnsBusyForTextWhenAllSlotsAreTaken)
+{
+    fakeReply(kTextPath, k200OK, kTenIdsBody);
+    config.maxConcurrent = 1;
+    const auto ml = service();
+    ASSERT_TRUE(ml->slots.try_acquire());
+
+    expectError(text(ml), SearchError::Busy);
+    EXPECT_EQ(fakeReceived(kTextPath), nullptr);
+
+    ml->slots.release();
+    EXPECT_TRUE(text(ml).has_value());
 }

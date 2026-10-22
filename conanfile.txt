@@ -7,6 +7,7 @@
 drogon/1.9.13
 libsodium/1.0.22
 libcurl/8.22.0
+icu/78.2
 
 [test_requires]
 gtest/1.18.0

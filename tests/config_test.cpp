@@ -26,7 +26,7 @@ class LoadConfigTest : public ::testing::Test
              {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
               "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET", "OIDC_VK_CLIENT_ID", "ML_URL",
               "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
-              "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
+              "ML_TEXT_TIMEOUT_MS", "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
         {
             unsetenv(name);
         }
@@ -38,9 +38,10 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("POSTGRES_URL");
         unsetenv("APP_URL");
         unsetenv("SMARTCAPTCHA_SERVER_KEY");
-        for (const char *name : {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD", "ML_URL",
-                                 "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
-                                 "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
+        for (const char *name :
+             {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD", "ML_URL", "ML_MAX_CONCURRENT",
+              "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS", "ML_TEXT_TIMEOUT_MS",
+              "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
         {
             unsetenv(name);
         }
@@ -201,6 +202,8 @@ TEST_F(LoadConfigTest, UsesContractDefaultsForMl)
     EXPECT_EQ(ml.maxConcurrent, 4u);
     EXPECT_EQ(ml.imageTimeout, std::chrono::milliseconds(9'000));
     EXPECT_EQ(ml.videoTimeout, std::chrono::milliseconds(14'000));
+    EXPECT_EQ(ml.textTimeout, std::chrono::milliseconds(4'000));
+    EXPECT_EQ(ml.audioTimeout, std::chrono::milliseconds(14'000));
     EXPECT_EQ(ml.failuresToOpen, 5);
     EXPECT_EQ(ml.openFor, std::chrono::milliseconds(30'000));
 }
@@ -269,6 +272,7 @@ namespace
 
 // Четыре новых настройки ML: одинаковые правила, различается переменная и поле
 constexpr const char *kMlNumberNames[] = {"ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
+                                          "ML_TEXT_TIMEOUT_MS",  "ML_AUDIO_TIMEOUT_MS",
                                           "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"};
 
 std::string loadConfigError()
@@ -297,6 +301,41 @@ TEST_F(LoadConfigTest, ReadsMlVideoTimeoutInMilliseconds)
 {
     setenv("ML_VIDEO_TIMEOUT_MS", "7000", 1);
     EXPECT_EQ(loadConfig().ml.videoTimeout, std::chrono::milliseconds(7'000));
+}
+
+TEST_F(LoadConfigTest, ReadsMlTextTimeoutInMilliseconds)
+{
+    setenv("ML_TEXT_TIMEOUT_MS", "2500", 1);
+    EXPECT_EQ(loadConfig().ml.textTimeout, std::chrono::milliseconds(2'500));
+}
+
+TEST_F(LoadConfigTest, ReadsMlAudioTimeoutInMilliseconds)
+{
+    setenv("ML_AUDIO_TIMEOUT_MS", "7000", 1);
+    EXPECT_EQ(loadConfig().ml.audioTimeout, std::chrono::milliseconds(7'000));
+}
+
+TEST_F(LoadConfigTest, MlTextTimeoutLeavesOtherNumbersAtDefaults)
+{
+    setenv("ML_TEXT_TIMEOUT_MS", "1", 1);
+    const MlConfig ml = loadConfig().ml;
+    EXPECT_EQ(ml.textTimeout, std::chrono::milliseconds(1));
+    EXPECT_EQ(ml.imageTimeout, std::chrono::milliseconds(9'000));
+    EXPECT_EQ(ml.videoTimeout, std::chrono::milliseconds(14'000));
+    EXPECT_EQ(ml.audioTimeout, std::chrono::milliseconds(14'000));
+    EXPECT_EQ(ml.maxConcurrent, 4u);
+    EXPECT_EQ(ml.failuresToOpen, 5);
+    EXPECT_EQ(ml.openFor, std::chrono::milliseconds(30'000));
+}
+
+TEST_F(LoadConfigTest, MlAudioTimeoutLeavesOtherNumbersAtDefaults)
+{
+    setenv("ML_AUDIO_TIMEOUT_MS", "1", 1);
+    const MlConfig ml = loadConfig().ml;
+    EXPECT_EQ(ml.audioTimeout, std::chrono::milliseconds(1));
+    EXPECT_EQ(ml.textTimeout, std::chrono::milliseconds(4'000));
+    EXPECT_EQ(ml.imageTimeout, std::chrono::milliseconds(9'000));
+    EXPECT_EQ(ml.videoTimeout, std::chrono::milliseconds(14'000));
 }
 
 TEST_F(LoadConfigTest, ReadsMlFailuresToOpenAsCount)

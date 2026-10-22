@@ -422,4 +422,413 @@ TEST_F(SearchTest, VideoSearchSendsMovToVideoEndpointAndReturnsCard)
     EXPECT_EQ(std::string(received->body()), kMov);
 }
 
+const std::string kTextPath = "/v1/search/text";
+const std::string kAudioPath = "/v1/search/audio";
+const std::string kApiText = "/api/v1/search/text";
+const std::string kApiAudio = "/api/v1/search/audio";
+
+const std::string kMp3 = readSample("audio.mp3");
+const std::string kWav = readSample("audio.wav");
+const std::string kOgg = readSample("audio.ogg");
+const std::string kM4a = readSample("audio.m4a");
+const std::string kIsomM4a = readSample("audio-isom.m4a");
+const std::string kFlac = readSample("reject.flac");
+const std::string kAv = readSample("reject-av.mp4");
+
+constexpr std::string_view kAudioPrefix = "Невозможно выполнить поиск по аудиофрагменту: ";
+constexpr std::string_view kTextPrefix = "Невозможно выполнить поиск по запросу: ";
+
+std::string audioMessage(std::string_view tail)
+{
+    return std::string(kAudioPrefix) + std::string(tail);
+}
+
+std::string textMessage(std::string_view tail)
+{
+    return std::string(kTextPrefix) + std::string(tail);
+}
+
+std::string repeat(std::string_view unit, std::size_t count)
+{
+    std::string result;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        result += unit;
+    }
+    return result;
+}
+
+class TextSearchTest : public SearchTest
+{
+  protected:
+    HttpResponsePtr searchText(const HttpRequestPtr &req, const std::shared_ptr<MlService> &ml)
+    {
+        return run(textSearchHandler(db, ml, req));
+    }
+
+    HttpResponsePtr searchText(const std::string &query,
+                               const std::map<std::string, std::string> &cookies = {})
+    {
+        Json::Value json(Json::objectValue);
+        json["query"] = query;
+        return searchText(request(Post, kApiText, json, cookies), service());
+    }
+
+    static void expectQueryError(const HttpResponsePtr &response, HttpStatusCode status,
+                                 const std::string &code, const std::string &message)
+    {
+        EXPECT_EQ(response->statusCode(), status);
+        const Json::Value json = body(response);
+        EXPECT_EQ(json["code"].asString(), code);
+        EXPECT_EQ(json["message"].asString(), message);
+        EXPECT_EQ(json["field"].asString(), "query");
+    }
+
+    static void expectUnavailable(const HttpResponsePtr &response)
+    {
+        expectError(response, k503ServiceUnavailable, "SEARCH_UNAVAILABLE", kUnavailable, false);
+    }
+
+    static std::vector<std::int64_t> resultIds(const HttpResponsePtr &response)
+    {
+        std::vector<std::int64_t> ids;
+        const Json::Value json = body(response);
+        for (const Json::Value &card : json["results"])
+        {
+            ids.push_back(card["movie_id"].asInt64());
+        }
+        return ids;
+    }
+};
+
+TEST_F(TextSearchTest, ReturnsCardsInMlOrderForGuest)
+{
+    insertFullMovie(603);
+    insertFullMovie(604);
+    fakeReply(kTextPath, k200OK, R"({"movie_ids":[604,603]})");
+    const auto response = searchText("абв где");
+
+    EXPECT_EQ(response->statusCode(), k200OK);
+    EXPECT_EQ(resultIds(response), (std::vector<std::int64_t>{604, 603}));
+    const Json::Value card = body(response)["results"][0];
+    EXPECT_EQ(card["title"].asString(), "Матрица");
+    EXPECT_EQ(card["year"].asInt(), 1999);
+    EXPECT_EQ(card["poster_url"].asString(), "https://image.tmdb.org/t/p/w500/p.jpg");
+    EXPECT_EQ(card["overview"].asString(), "Хакер узнаёт правду");
+    EXPECT_FALSE(card.isMember("score"));
+}
+
+TEST_F(TextSearchTest, BogusSessionCookieDoesNotBlockGuest)
+{
+    insertFullMovie(603);
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    const auto response = searchText("abc", {{"dv_session", "bogus"}});
+
+    EXPECT_EQ(response->statusCode(), k200OK);
+    EXPECT_EQ(resultIds(response), (std::vector<std::int64_t>{603}));
+}
+
+TEST_F(TextSearchTest, SendsTrimmedQueryAsJsonToMl)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    ASSERT_EQ(searchText("  абв где \n")->statusCode(), k200OK);
+
+    const auto received = fakeReceived(kTextPath);
+    ASSERT_NE(received, nullptr);
+    EXPECT_EQ(received->method(), Post);
+    EXPECT_EQ(received->getHeader("content-type"), "application/json");
+    EXPECT_FALSE(received->getHeader("x-request-id").empty());
+    Json::Value sent;
+    ASSERT_TRUE(Json::Reader().parse(std::string(received->body()), sent));
+    ASSERT_TRUE(sent.isObject());
+    EXPECT_EQ(sent.size(), 1U);
+    EXPECT_EQ(sent["query"].asString(), "абв где");
+}
+
+TEST_F(TextSearchTest, SkipsIdsMissingFromDatabaseKeepingOrder)
+{
+    insertFullMovie(603);
+    insertFullMovie(604);
+    fakeReply(kTextPath, k200OK, R"({"movie_ids":[1,603,2,604]})");
+
+    EXPECT_EQ(resultIds(searchText("abc")), (std::vector<std::int64_t>{603, 604}));
+}
+
+TEST_F(TextSearchTest, ReturnsEmptyResultsWhenNothingIsInDatabaseOrMlFindsNothing)
+{
+    fakeReply(kTextPath, k200OK, R"({"movie_ids":[1,2]})");
+    expectEmptyResults(searchText("abc"));
+    fakeReply(kTextPath, k200OK, R"({"movie_ids":[]})");
+    expectEmptyResults(searchText("abc"));
+}
+
+TEST_F(TextSearchTest, ReturnsAtMostTenCards)
+{
+    std::string ids;
+    for (int id = 101; id <= 111; ++id)
+    {
+        insertFullMovie(id);
+        ids += (id == 101 ? "" : ",") + std::to_string(id);
+    }
+    fakeReply(kTextPath, k200OK, R"({"movie_ids":[)" + ids + "]}");
+
+    const auto result = resultIds(searchText("abc"));
+    ASSERT_EQ(result.size(), 10U);
+    for (std::size_t i = 0; i < result.size(); ++i)
+    {
+        EXPECT_EQ(result[i], static_cast<std::int64_t>(101 + i));
+    }
+}
+
+TEST_F(TextSearchTest, RejectsMissingOrNonStringQueryAsEmpty)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    std::vector<HttpRequestPtr> requests;
+    requests.push_back(request(Post, kApiText));
+    auto plain = HttpRequest::newHttpRequest();
+    plain->setMethod(Post);
+    plain->setPath(kApiText);
+    plain->setContentTypeCode(CT_TEXT_PLAIN);
+    plain->setBody("abc");
+    requests.push_back(plain);
+    requests.push_back(request(Post, kApiText, Json::Value(Json::objectValue)));
+    for (const char *raw : {R"({"query":5})", R"({"query":null})", R"({"query":"   "})"})
+    {
+        Json::Value json;
+        ASSERT_TRUE(Json::Reader().parse(raw, json));
+        requests.push_back(request(Post, kApiText, json));
+    }
+    for (const HttpRequestPtr &req : requests)
+    {
+        expectQueryError(searchText(req, service()), k400BadRequest, "QUERY_EMPTY",
+                         textMessage("запрос пустой"));
+    }
+    EXPECT_EQ(fakeReceived(kTextPath), nullptr);
+}
+
+TEST_F(TextSearchTest, RejectsTooShortQueryWithoutCallingMl)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    expectQueryError(searchText("ab"), k422UnprocessableEntity, "QUERY_TOO_SHORT",
+                     textMessage("запрос короче 3 символов"));
+    EXPECT_EQ(fakeReceived(kTextPath), nullptr);
+}
+
+TEST_F(TextSearchTest, RejectsTooLongQueryWithoutCallingMl)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    expectQueryError(searchText(repeat("a", 251)), k422UnprocessableEntity, "QUERY_TOO_LONG",
+                     textMessage("запрос длиннее 250 символов"));
+    EXPECT_EQ(fakeReceived(kTextPath), nullptr);
+}
+
+TEST_F(TextSearchTest, AcceptsQueryOfMaxLengthInCodePoints)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    EXPECT_EQ(searchText(repeat("я", 250))->statusCode(), k200OK);
+    EXPECT_NE(fakeReceived(kTextPath), nullptr);
+}
+
+TEST_F(TextSearchTest, ResolvesMlInvalidQueryByQueryLength)
+{
+    fakeReply(kTextPath, k422UnprocessableEntity, R"({"code":"INVALID_QUERY"})");
+    expectQueryError(searchText("abc"), k422UnprocessableEntity, "QUERY_TOO_SHORT",
+                     textMessage("запрос короче 3 символов"));
+    expectQueryError(searchText(repeat("a", 250)), k422UnprocessableEntity, "QUERY_TOO_LONG",
+                     textMessage("запрос длиннее 250 символов"));
+}
+
+TEST_F(TextSearchTest, MapsMlFileErrorCodeToUnavailable)
+{
+    fakeReply(kTextPath, k415UnsupportedMediaType, R"({"code":"UNSUPPORTED_MEDIA_TYPE"})");
+    expectUnavailable(searchText("abc"));
+}
+
+TEST_F(TextSearchTest, MapsMlOutagesToUnavailableNeverTo500)
+{
+    fakeReply(kTextPath, k500InternalServerError, "{}");
+    expectUnavailable(searchText("abc"));
+    fakeReply(kTextPath, k503ServiceUnavailable, R"({"code":"NOT_READY"})");
+    expectUnavailable(searchText("abc"));
+}
+
+TEST_F(TextSearchTest, ReportsUnavailableWhenMlIsUnreachable)
+{
+    config.url = "http://127.0.0.1:1";
+    expectUnavailable(searchText("abc"));
+}
+
+TEST_F(TextSearchTest, ReportsBusyWhenAllMlSlotsAreTaken)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    const auto ml = service();
+    ASSERT_TRUE(ml->slots.try_acquire());
+    Json::Value json(Json::objectValue);
+    json["query"] = "abc";
+    const auto response = searchText(request(Post, kApiText, json), ml);
+    ml->slots.release();
+
+    expectError(response, k503ServiceUnavailable, "SERVER_BUSY",
+                "Сервис перегружен. Попробуйте позже", false);
+    EXPECT_EQ(fakeReceived(kTextPath), nullptr);
+}
+
+TEST_F(TextSearchTest, DoesNotRejectMarkupInQuery)
+{
+    fakeReply(kTextPath, k200OK, kFoundBody);
+    EXPECT_EQ(searchText("<script>alert(1)</script>")->statusCode(), k200OK);
+}
+
+class AudioSearchTest : public SearchTest
+{
+  protected:
+    std::optional<std::map<std::string, std::string>> cookies_;
+
+    HttpResponsePtr searchAudio(const std::vector<Part> &parts)
+    {
+        if (!cookies_)
+        {
+            cookies_ =
+                signedIn();  // пользователь один на тест: повторный вход нарушил бы уникальность
+        }
+        return search(MediaKind::Audio, multipart(kApiAudio, parts, *cookies_), service());
+    }
+
+    static void expectAudioError(const HttpResponsePtr &response, HttpStatusCode status,
+                                 const std::string &code, std::string_view tail)
+    {
+        expectError(response, status, code, audioMessage(tail), true);
+    }
+
+    void expectForwarded(const std::string &bytes, const std::string &mime)
+    {
+        const auto received = fakeReceived(kAudioPath);
+        ASSERT_NE(received, nullptr);
+        EXPECT_EQ(received->method(), Post);
+        EXPECT_EQ(received->getHeader("content-type"), mime);
+        EXPECT_EQ(std::string(received->body()), bytes);
+    }
+};
+
+TEST_F(AudioSearchTest, RejectsMissingSessionBeforeCallingMl)
+{
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    const auto response =
+        search(MediaKind::Audio, multipart(kApiAudio, {file("a.mp3", kMp3)}), service());
+
+    EXPECT_EQ(response->statusCode(), k401Unauthorized);
+    EXPECT_EQ(body(response)["code"].asString(), "SESSION_REQUIRED");
+    EXPECT_EQ(fakeReceived(kAudioPath), nullptr);
+}
+
+TEST_F(AudioSearchTest, ChecksSessionBeforeFile)
+{
+    const auto response = search(MediaKind::Audio, multipart(kApiAudio, {}), service());
+
+    EXPECT_EQ(response->statusCode(), k401Unauthorized);
+}
+
+TEST_F(AudioSearchTest, ForwardsMp3WithDetectedTypeDespiteNameAndDeclaredType)
+{
+    insertFullMovie(603);
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    const auto response = searchAudio({file("clip.wav", kMp3, "text/plain")});
+
+    EXPECT_EQ(response->statusCode(), k200OK);
+    EXPECT_EQ(body(response)["results"][0]["movie_id"].asInt64(), 603);
+    expectForwarded(kMp3, "audio/mpeg");
+    EXPECT_EQ(fakeReceived(kImagePath), nullptr);
+}
+
+TEST_F(AudioSearchTest, ForwardsEachSupportedFormatWithItsMime)
+{
+    struct Row
+    {
+        const std::string &bytes;
+        std::string mime;
+    };
+    const std::vector<Row> rows{
+        {kWav, "audio/wav"}, {kM4a, "audio/mp4"}, {kIsomM4a, "audio/mp4"}, {kOgg, "audio/ogg"}};
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    for (const Row &row : rows)
+    {
+        SCOPED_TRACE(row.mime);
+        EXPECT_EQ(searchAudio({file("a", row.bytes)})->statusCode(), k200OK);
+        expectForwarded(row.bytes, row.mime);
+    }
+}
+
+TEST_F(AudioSearchTest, RequiresFile)
+{
+    expectAudioError(searchAudio({}), k400BadRequest, "FILE_REQUIRED",
+                     "аудиофрагмент не загружен и не записан");
+}
+
+TEST_F(AudioSearchTest, RejectsTwoFiles)
+{
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    expectAudioError(searchAudio({file("a.mp3", kMp3), file("b.wav", kWav)}), k400BadRequest,
+                     "TOO_MANY_FILES", "загружено больше одного файла");
+    EXPECT_EQ(fakeReceived(kAudioPath), nullptr);
+}
+
+TEST_F(AudioSearchTest, RejectsFileAboveTwentyMebibytes)
+{
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    expectAudioError(searchAudio({file("a.mp3", padded(kMp3, kMaxAudioBytes + 1))}),
+                     k413RequestEntityTooLarge, "FILE_TOO_LARGE", "размер файла больше 20 МБ");
+    EXPECT_EQ(fakeReceived(kAudioPath), nullptr);
+}
+
+TEST_F(AudioSearchTest, AcceptsFileOfExactlyTwentyMebibytes)
+{
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    EXPECT_EQ(searchAudio({file("a.mp3", padded(kMp3, kMaxAudioBytes))})->statusCode(), k200OK);
+    EXPECT_NE(fakeReceived(kAudioPath), nullptr);
+}
+
+TEST_F(AudioSearchTest, RejectsUnsupportedContentWithoutCallingMl)
+{
+    fakeReply(kAudioPath, k200OK, kFoundBody);
+    for (const std::string *bytes : {&kFlac, &kMp4, &kAv})
+    {
+        expectAudioError(searchAudio({file("a.mp3", *bytes, "audio/mpeg")}),
+                         k415UnsupportedMediaType, "UNSUPPORTED_FORMAT",
+                         "поддерживаются только MP3, WAV, OGG и M4A");
+    }
+    EXPECT_EQ(fakeReceived(kAudioPath), nullptr);
+}
+
+TEST_F(AudioSearchTest, MapsMlDurationTooLongToAudioTooLong)
+{
+    fakeReply(kAudioPath, k422UnprocessableEntity, R"({"code":"DURATION_TOO_LONG"})");
+    expectAudioError(searchAudio({file("a.mp3", kMp3)}), k422UnprocessableEntity, "AUDIO_TOO_LONG",
+                     "аудиофрагмент длиннее 10 секунд");
+}
+
+TEST_F(AudioSearchTest, MapsMlCorruptedFileTo422)
+{
+    fakeReply(kAudioPath, k422UnprocessableEntity, R"({"code":"FILE_CORRUPTED"})");
+    expectAudioError(searchAudio({file("a.mp3", kMp3)}), k422UnprocessableEntity, "FILE_CORRUPTED",
+                     "файл поврежден или не может быть обработан");
+}
+
+TEST_F(AudioSearchTest, ReturnsOnlyMostRelevantMovie)
+{
+    insertFullMovie(603);
+    insertFullMovie(604);
+    fakeReply(kAudioPath, k200OK, R"({"movie_ids":[603,604]})");
+    const Json::Value json = body(searchAudio({file("a.mp3", kMp3)}));
+
+    ASSERT_EQ(json["results"].size(), 1U);
+    EXPECT_EQ(json["results"][0]["movie_id"].asInt64(), 603);
+}
+
+TEST_F(AudioSearchTest, ReportsUnavailableWhenMlIsUnreachable)
+{
+    config.url = "http://127.0.0.1:1";
+    expectError(searchAudio({file("a.mp3", kMp3)}), k503ServiceUnavailable, "SEARCH_UNAVAILABLE",
+                kUnavailable, false);
+}
+
 }  // namespace

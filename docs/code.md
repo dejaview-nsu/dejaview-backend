@@ -10,7 +10,7 @@ src/
   health.*              GET /health
   background.*          фоновый поток: письма из очереди, очистка устаревшего
   auth/                 регистрация, вход, сессии, пароль, OIDC - docs/auth.md
-  search/               поиск по изображению и видео: проверки файла, клиент ML, выключатель
+  search/               поиск по изображению, видео, аудио и тексту: проверки файла и запроса, клиент ML, выключатель
   email/                письма: шаблоны templates/*.html, формат, отправка из очереди
 tests/                  модульные тесты, раскладка как в src/
 db/migrations/          миграции dbmate
@@ -50,6 +50,19 @@ db/migrations/          миграции dbmate
   ```
   Отчёт по строкам - `build-coverage/coverage/index.html`. В обычной сборке (GCC) цели `coverage`
   нет смысла: она подскажет команды выше и завершится ошибкой.
+- **Санитайзеры и фаззинг** - для кода, который разбирает чужие байты (загруженные файлы,
+  тексты запросов). ASan и UBSan роняют тест на чтении за границей, переполнении и UB, которые
+  обычная сборка пропустит молча; libFuzzer гоняет разбор MP4 (`src/search/mp4_tracks.cpp`) на
+  случайных входах, начальный корпус - образцы из `tests/data/search`. Отдельная сборка в
+  `build-sanitize/` (покрытия в ней нет), в Dev Container:
+  ```sh
+  CXX=clang++-20 cmake -S . -B build-sanitize -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+      -DDEJAVIEW_SANITIZE=ON -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+  cmake --build build-sanitize --target check   # все тесты под ASan и UBSan
+  cmake --build build-sanitize --target fuzz    # фаззинг 15 минут
+  ```
+  Найденный фаззером вход libFuzzer сохраняет в `build-sanitize/crash-*`: его байты становятся
+  модульным тестом в `tests/search/mp4_tracks_test.cpp`.
 - **Внешние сервисы** (SmartCaptcha, OIDC-провайдеры) в тестах заменяет фейковый HTTP-сервер в том
   же процессе: `DbTest::fakeReply` задаёт ответ на путь, `fakeReceived` - что прислал backend. Его
   адрес попадает в код через `CaptchaSettings::url` и `OidcSettings::fakeProviderUrl`. С настоящими
