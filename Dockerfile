@@ -45,6 +45,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libmagic1t64 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/build/dejaview-backend /usr/local/bin/dejaview-backend
+# миграции применяет сам контейнер при старте: сервиса db-migrate на сервере нет (#17832)
+COPY --from=ghcr.io/amacneil/dbmate:2.36.0 /usr/local/bin/dbmate /usr/local/bin/dbmate
+COPY db/migrations /usr/local/share/dejaview/migrations
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 USER ubuntu
 EXPOSE 8081
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["dejaview-backend"]

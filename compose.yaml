@@ -1,5 +1,5 @@
 # Собрать и запустить backend одной командой: docker compose up --build
-# PostgreSQL с миграциями - из dejaview-infra, см. README.
+# PostgreSQL - из dejaview-infra, см. README. Миграции контейнер backend применяет при старте.
 services:
   backend:
     build: .
