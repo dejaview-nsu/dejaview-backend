@@ -39,12 +39,14 @@ docker compose up --build
 ```
 
 `docker compose up --build` собирает образ (стадии описаны в `Dockerfile`), прогоняет модульные
-тесты (упавший тест останавливает сборку) и запускает сервер. Остановить - `Ctrl+C`; в фоне -
+тесты (упавший тест останавливает сборку), применяет новые [миграции](docs/database.md) и
+запускает сервер. Остановить - `Ctrl+C`; в фоне -
 добавить `-d`, остановить - `docker compose down`. Первая сборка ~10 минут (Conan собирает Drogon и ICU),
 дальше - секунды.
 
 Проверка: `curl localhost:8081/health` → `{"database":"ok","status":"ok"}`, код 200.
-503 - БД недоступна, ответ не дольше 2 с.
+503 - запущенный сервер потерял БД, ответ не дольше 2 с. Если БД недоступна при старте, контейнер
+ждёт её до 1 минуты и завершается, не запустив сервер.
 
 Если что-то не так - [частые проблемы](docs/devcontainer.md#частые-проблемы).
 
@@ -55,7 +57,7 @@ docker compose up --build
 | Переменная | Обязательная | По умолчанию | Назначение |
 |---|---|---|---|
 | `PORT` | нет | `8081` | порт HTTP-сервера |
-| `POSTGRES_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable` |
+| `POSTGRES_URL` | да | - | `postgres://user:password@host:5432/db?sslmode=disable`; `sslmode` обязателен: по этому адресу применяются и миграции |
 | `APP_URL` | да | - | адрес frontend для ссылок в письмах, например `https://dejaview.ru` |
 | `SMARTCAPTCHA_SERVER_KEY` | в продакшене | - | серверный ключ Yandex SmartCaptcha; не задан - CAPTCHA при входе отключена |
 | `SMTP_URL` | да | - | почтовый сервер: `smtps://smtp.example.ru:465` (TLS), локально `smtp://host.docker.internal:1025` (Mailpit) |
