@@ -1,2 +1,5 @@
 # Образцы для тестов - байты нельзя менять, перевод строк не конвертировать
 tests/data/** -text
+# sh не запускает скрипты с CRLF из Windows-клона
+docker-entrypoint.sh text eol=lf
+tests/image/*.sh text eol=lf

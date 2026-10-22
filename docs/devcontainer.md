@@ -87,5 +87,6 @@ SELECT occurred_at, event_type, user_id, details FROM security_events ORDER BY o
 | `/health` → 503 | БД не запущена: команда из [«Быстрого старта»](../README.md#быстрый-старт) в `dejaview-infra` |
 | `Ошибка конфигурации: ...` при старте | неверная переменная в `.env`, см. [«Конфигурация»](../README.md#конфигурация) |
 | `db-migrate` завершился с ошибкой | `docker compose logs db-migrate` в `dejaview-infra` |
+| `pq: SSL is not enabled on the server` | в `POSTGRES_URL` нет `sslmode`: добавить `?sslmode=disable` (локально) |
 | clangd подчёркивает код Drogon красным | `Ctrl+Shift+P` (на Mac `Cmd+Shift+P`) → **clangd: Restart language server**, не помогло - Rebuild Container |
 | `git push`: `Permission denied (publickey)` | на компьютере `ssh-add`, перезапустить окно VS Code |
