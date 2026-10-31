@@ -3,7 +3,7 @@
 #include "auth/http_common.hpp"
 #include "auth/session.hpp"
 #include "error_response.hpp"
-#include "movies.hpp"
+#include "movies/card.hpp"
 #include "search/query.hpp"
 
 #include <drogon/MultiPart.h>

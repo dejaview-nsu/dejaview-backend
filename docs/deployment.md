@@ -14,6 +14,8 @@
 - [ ] `SMARTCAPTCHA_SERVER_KEY` - **обязателен**: без него CAPTCHA при входе выключена (в логе при
       старте `WARN ... CAPTCHA при входе отключена`).
 - [ ] `OIDC_YANDEX_*`, `OIDC_GOOGLE_*`, `OIDC_VK_CLIENT_ID` - для каждого включённого провайдера.
+- [ ] `TMDB_ACCESS_TOKEN` - без него карточка фильма не из каталога отвечает 503 (в логе при старте
+      `WARN TMDB_ACCESS_TOKEN не задан`).
 - [ ] Секреты - только в секретах сервера: не в git, не в образе, не во frontend.
 
 `dejaview-infra/compose.yaml` пока не передаёт backend `APP_URL`, `SMTP_URL` и `SMTP_FROM`: без них
@@ -40,7 +42,7 @@ backend не стартует. `MINIO_*` и `INFERENCE_URL` оттуда backend
 - [ ] Почта: SPF, DKIM и DMARC для домена отправителя.
 - [ ] Исходящие соединения (если сервер их ограничивает): HTTPS до `oauth.yandex.ru`,
       `login.yandex.ru`, `oauth2.googleapis.com`, `openidconnect.googleapis.com`, `id.vk.com`,
-      `smartcaptcha.yandexcloud.net`; SMTP-сервер, порт 465.
+      `smartcaptcha.yandexcloud.net`, `api.themoviedb.org`; SMTP-сервер, порт 465.
 
 ## После запуска
 
@@ -60,6 +62,8 @@ backend не стартует. `MINIO_*` и `INFERENCE_URL` оттуда backend
 | Строка | Что значит |
 |---|---|
 | `ERROR SmartCaptcha ответила 4xx - проверьте SMARTCAPTCHA_SERVER_KEY` | неверный ключ: CAPTCHA фактически выключена |
+| `ERROR TMDB отклонил ключ (401): проверьте TMDB_ACCESS_TOKEN` | неверный ключ: фильмы не из каталога получают 503 |
+| `WARN TMDB недоступен ...`, `WARN Вызовы TMDB отключены после серии сбоев` | TMDB не отвечает; после 5 сбоев подряд вызовы отключаются на 30 с, фильмы из кеша открываются |
 | `WARN письмо <N>: попытка <K> не удалась: ...` | SMTP недоступен или отклоняет письма |
 | `WARN OIDC <провайдер>: ...` | вход через провайдера не удался, причина в строке |
 | `ERROR фоновые задачи: ...` | фоновый поток не достучался до БД, повторит через 5 с |

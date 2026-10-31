@@ -26,7 +26,8 @@ class LoadConfigTest : public ::testing::Test
              {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
               "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET", "OIDC_VK_CLIENT_ID", "ML_URL",
               "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
-              "ML_TEXT_TIMEOUT_MS", "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
+              "ML_TEXT_TIMEOUT_MS", "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS",
+              "TMDB_ACCESS_TOKEN"})
         {
             unsetenv(name);
         }
@@ -41,7 +42,7 @@ class LoadConfigTest : public ::testing::Test
         for (const char *name :
              {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD", "ML_URL", "ML_MAX_CONCURRENT",
               "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS", "ML_TEXT_TIMEOUT_MS",
-              "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS"})
+              "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS", "TMDB_ACCESS_TOKEN"})
         {
             unsetenv(name);
         }
@@ -131,6 +132,13 @@ TEST_F(LoadConfigTest, CaptchaKeyIsOptional)
     EXPECT_EQ(loadConfig().smartCaptchaServerKey, "");
     setenv("SMARTCAPTCHA_SERVER_KEY", "ysc2_secret", 1);
     EXPECT_EQ(loadConfig().smartCaptchaServerKey, "ysc2_secret");
+}
+
+TEST_F(LoadConfigTest, TmdbTokenIsOptional)
+{
+    EXPECT_EQ(loadConfig().tmdbAccessToken, "");
+    setenv("TMDB_ACCESS_TOKEN", "eyJhbGciOiJIUzI1NiJ9.test", 1);
+    EXPECT_EQ(loadConfig().tmdbAccessToken, "eyJhbGciOiJIUzI1NiJ9.test");
 }
 
 TEST_F(LoadConfigTest, ReadsSmtp)
