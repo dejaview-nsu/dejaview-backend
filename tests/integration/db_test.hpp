@@ -18,6 +18,8 @@
 class DbTest : public ::testing::Test
 {
   protected:
+    // Без TEST_DATABASE_URL тест пропускается, а db остаётся пустым. GTEST_SKIP выходит только из
+    // DbTest::SetUp: наследник, который в своём SetUp работает с db, сначала проверяет IsSkipped()
     void SetUp() override;
 
     drogon::orm::DbClientPtr db;

@@ -21,6 +21,9 @@ inline constexpr std::string_view kPosterBaseUrl = "https://image.tmdb.org/t/p/w
 // movie_id из пути: целое положительное число, иначе nullopt.
 std::optional<std::int64_t> parseMovieId(std::string_view text);
 
+// 404 MOVIE_NOT_FOUND «Фильм не найден»
+drogon::HttpResponsePtr movieNotFound();
+
 // GET /movies/{movie_id}: MovieCard, гостю тоже. movie_id не число или фильма нет и в TMDB -
 // 404, фильма нет в кеше, а TMDB недоступен - 503.
 drogon::Task<drogon::HttpResponsePtr> movieCardHandler(drogon::orm::DbClientPtr db,

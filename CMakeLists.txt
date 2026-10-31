@@ -45,6 +45,7 @@ add_library(dejaview-core STATIC
     src/movies/card.cpp
     src/movies/tmdb_client.cpp
     src/movies/tmdb_movie.cpp
+    src/reviews.cpp
     src/auth/captcha.cpp
     src/auth/crypto.cpp
     src/auth/http_common.cpp
@@ -91,6 +92,7 @@ add_executable(dejaview-tests
     tests/error_response_test.cpp
     tests/movies/card_test.cpp
     tests/movies/tmdb_movie_test.cpp
+    tests/reviews_test.cpp
     tests/auth/crypto_test.cpp
     tests/auth/login_rules_test.cpp
     tests/auth/oidc_profile_test.cpp
@@ -114,6 +116,7 @@ add_executable(dejaview-tests
     tests/integration/oidc_test.cpp
     tests/integration/password_test.cpp
     tests/integration/registration_test.cpp
+    tests/integration/reviews_test.cpp
     tests/integration/search_test.cpp)
 target_include_directories(dejaview-tests PRIVATE tests)
 # миграции интеграционные тесты применяют сами - через libpq, как dbmate

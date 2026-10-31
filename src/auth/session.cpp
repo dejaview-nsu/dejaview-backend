@@ -49,18 +49,28 @@ Task<std::expected<SessionUser, HttpResponsePtr>> checkSession(orm::DbClientPtr 
         co_return std::unexpected(
             errorResponse(k401Unauthorized, "SESSION_REQUIRED", "Войдите, чтобы продолжить"));
     }
-    // В приложении сессию уже нашёл advice до обработчика; без него (тесты) - ищем сейчас
-    co_await resolveSession(db, req);
-    if (!hasValidSession(req))
+    const auto user = co_await currentUser(db, req);
+    if (!user)
     {
         auto response =
             errorResponse(k401Unauthorized, "SESSION_EXPIRED", "Сессия истекла. Войдите снова");
         response->addCookie(clearSessionCookie());
         co_return std::unexpected(response);
     }
-    co_return req->attributes()->get<SessionUser>(kUser);
+    co_return *user;
 }
 }  // namespace
+
+Task<std::optional<SessionUser>> currentUser(orm::DbClientPtr db, HttpRequestPtr req)
+{
+    // В приложении сессию уже нашёл advice до обработчика; без него (тесты) - ищем сейчас
+    co_await resolveSession(db, req);
+    if (!hasValidSession(req))
+    {
+        co_return std::nullopt;
+    }
+    co_return req->attributes()->get<SessionUser>(kUser);
+}
 
 Cookie sessionCookie(const std::string &token)
 {
