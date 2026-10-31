@@ -7,6 +7,7 @@
 #include "config.hpp"
 #include "error_response.hpp"
 #include "health.hpp"
+#include "movies/card.hpp"
 #include "search/search.hpp"
 
 #include <drogon/drogon.h>
@@ -58,6 +59,13 @@ int main()
 
     // Лимит ML и выключатель - на экземпляр, общие для обоих маршрутов поиска
     const auto ml = std::make_shared<MlService>(config.ml);
+
+    if (config.tmdbAccessToken.empty())
+    {
+        LOG_WARN << "TMDB_ACCESS_TOKEN не задан: фильм, которого нет в movies, получает 503";
+    }
+    const auto tmdb =
+        std::make_shared<TmdbService>(TmdbSettings{.accessToken = config.tmdbAccessToken});
 
     LOG_INFO << "dejaview-backend слушает порт " << config.port;
 
@@ -146,5 +154,8 @@ int main()
                          { return mediaSearchHandler(db, ml, MediaKind::Audio, req); }, {Post})
         .registerHandler("/api/v1/search/text", [db, ml](HttpRequestPtr req)
                          { return textSearchHandler(db, ml, req); }, {Post})
+        .registerHandler("/api/v1/movies/{movie_id}",
+                         [db, tmdb](HttpRequestPtr, std::string movieId)
+                         { return movieCardHandler(db, tmdb, std::move(movieId)); }, {Get})
         .run();
 }

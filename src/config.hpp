@@ -61,6 +61,7 @@ struct Config
     OidcClient google;
     OidcClient vk;  // только clientId: VK ID обходится без секрета приложения (PKCE)
     MlConfig ml;
+    std::string tmdbAccessToken;
 };
 
 // Читает настройки из переменных окружения. При некорректном значении бросает std::runtime_error.

@@ -42,6 +42,9 @@ add_library(dejaview-core STATIC
     ${CMAKE_BINARY_DIR}/generated/email_templates.cpp
     src/error_response.cpp
     src/health.cpp
+    src/movies/card.cpp
+    src/movies/tmdb_client.cpp
+    src/movies/tmdb_movie.cpp
     src/auth/captcha.cpp
     src/auth/crypto.cpp
     src/auth/http_common.cpp
@@ -86,6 +89,8 @@ enable_testing()
 add_executable(dejaview-tests
     tests/config_test.cpp
     tests/error_response_test.cpp
+    tests/movies/card_test.cpp
+    tests/movies/tmdb_movie_test.cpp
     tests/auth/crypto_test.cpp
     tests/auth/login_rules_test.cpp
     tests/auth/oidc_profile_test.cpp
@@ -105,6 +110,7 @@ add_executable(dejaview-tests
     tests/integration/guest_test.cpp
     tests/integration/login_test.cpp
     tests/integration/ml_client_test.cpp
+    tests/integration/movies_test.cpp
     tests/integration/oidc_test.cpp
     tests/integration/password_test.cpp
     tests/integration/registration_test.cpp
