@@ -150,12 +150,14 @@ location.href = '/auth/oidc?provider=yandex&result=registration_required';
 
 ```sql
 INSERT INTO movies (movie_id, title, original_title, release_date, age_rating, poster_path,
-                    runtime_min, overview, genres, countries, crew)
+                    runtime_min, overview, genres, countries, crew, actors)
 VALUES (157336, 'Интерстеллар', 'Interstellar', '2014-11-05', '12+',
         '/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', 169,
         'Группа исследователей отправляется через червоточину.',
         '[{"id": 878, "name": "фантастика"}]', '[{"code": "US", "name": "США"}]',
-        '[{"person_id": 525, "name": "Кристофер Нолан", "role": "director"}]');
+        '[{"person_id": 525, "name": "Кристофер Нолан", "role": "director"}]',
+        '[{"person_id": 3895, "name": "Майкл Кейн", "character": "профессор Брэнд",
+           "profile_path": null}]');
 ```
 
 Карточка - `GET /api/v1/movies/157336`, фильм без данных - тот же `INSERT` только с `movie_id`,

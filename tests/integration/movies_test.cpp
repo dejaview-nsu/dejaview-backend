@@ -29,14 +29,17 @@ TEST_F(MovieCardTest, FullCardMatchesMoviesRow)
 {
     db->execSqlSync(
         "INSERT INTO movies (movie_id, title, original_title, release_date, age_rating, "
-        "poster_path, runtime_min, overview, genres, countries, crew) VALUES (157336, "
+        "poster_path, runtime_min, overview, genres, countries, crew, actors) VALUES (157336, "
         "'Интерстеллар', 'Interstellar', '2014-11-05', '12+', '/poster-157336.jpg', 169, "
         "'Группа исследователей отправляется через червоточину искать планету для человечества.', "
         "'[{\"id\": 12, \"name\": \"приключения\"}, {\"id\": 878, \"name\": \"фантастика\"}]', "
         "'[{\"code\": \"US\", \"name\": \"США\"}, {\"code\": \"GB\", \"name\": "
         "\"Великобритания\"}]', "
         "'[{\"person_id\": 525, \"name\": \"Кристофер Нолан\", \"role\": \"director\"}, "
-        "{\"person_id\": 525, \"name\": \"Кристофер Нолан\", \"role\": \"writer\"}]')");
+        "{\"person_id\": 525, \"name\": \"Кристофер Нолан\", \"role\": \"writer\"}]', "
+        "'[{\"person_id\": 3895, \"name\": \"Майкл Кейн\", \"character\": \"профессор Брэнд\", "
+        "\"profile_path\": \"/profile-3895.jpg\"}, {\"person_id\": 10297, \"name\": \"Мэттью "
+        "Макконахи\", \"character\": null, \"profile_path\": null}]')");
 
     const auto response = card("157336");
     EXPECT_EQ(response->statusCode(), k200OK);
@@ -52,7 +55,11 @@ TEST_F(MovieCardTest, FullCardMatchesMoviesRow)
         "genres": [{"id": 12, "name": "приключения"}, {"id": 878, "name": "фантастика"}],
         "countries": [{"code": "US", "name": "США"}, {"code": "GB", "name": "Великобритания"}],
         "crew": [{"person_id": 525, "name": "Кристофер Нолан", "role": "director"},
-                 {"person_id": 525, "name": "Кристофер Нолан", "role": "writer"}]
+                 {"person_id": 525, "name": "Кристофер Нолан", "role": "writer"}],
+        "actors": [{"person_id": 3895, "name": "Майкл Кейн", "character": "профессор Брэнд",
+                    "photo_url": "https://image.tmdb.org/t/p/w185/profile-3895.jpg"},
+                   {"person_id": 10297, "name": "Мэттью Макконахи", "character": null,
+                    "photo_url": null}]
     })"));
 }
 
@@ -67,7 +74,7 @@ TEST_F(MovieCardTest, EmptyFieldsAreNullAndEmptyLists)
     EXPECT_EQ(body(response), parse(R"({
         "movie_id": 1000001, "title": "Фильм без данных", "original_title": "Film Without Data",
         "year": null, "age_rating": null, "poster_url": null, "runtime_min": null,
-        "overview": null, "genres": [], "countries": [], "crew": []
+        "overview": null, "genres": [], "countries": [], "crew": [], "actors": []
     })"));
 }
 
