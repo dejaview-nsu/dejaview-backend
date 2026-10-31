@@ -1,0 +1,20 @@
+meta {
+  name: Фильма нет
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/movies/abc
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 404
+  res.body.code: eq MOVIE_NOT_FOUND
+}
+
+docs {
+  404 и на movie_id, которого нет в movies, и на не целое положительное число.
+}

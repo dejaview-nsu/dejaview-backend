@@ -1,0 +1,21 @@
+meta {
+  name: Карточка фильма
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/movies/157336
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.movie_id: eq 157336
+}
+
+docs {
+  Без авторизации. Нужен фильм в movies: каталог из dejaview-ml или INSERT из docs/frontend.md
+  («Как проверить экраны»). Пустые поля - null и [].
+}
