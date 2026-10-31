@@ -3,6 +3,7 @@
 #include "auth/http_common.hpp"
 #include "auth/session.hpp"
 #include "error_response.hpp"
+#include "movies.hpp"
 #include "search/query.hpp"
 
 #include <drogon/MultiPart.h>
@@ -16,8 +17,6 @@ using namespace drogon;
 
 namespace
 {
-
-const std::string kPosterBaseUrl = "https://image.tmdb.org/t/p/w500";
 
 HttpResponsePtr searchErrorResponse(MediaKind kind, SearchError error)
 {
@@ -72,7 +71,7 @@ Task<Json::Value> movieCards(orm::DbClientPtr db, std::vector<std::int64_t> ids,
         card["poster_url"] =
             row["poster_path"].isNull()
                 ? Json::Value()
-                : Json::Value(kPosterBaseUrl + row["poster_path"].as<std::string>());
+                : Json::Value(std::string(kPosterBaseUrl) + row["poster_path"].as<std::string>());
         card["overview"] = row["overview"].isNull()
                                ? Json::Value()
                                : Json::Value(row["overview"].as<std::string>());
