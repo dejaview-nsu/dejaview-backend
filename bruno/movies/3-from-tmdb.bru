@@ -1,0 +1,22 @@
+meta {
+  name: Фильм не из каталога
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/movies/550
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.movie_id: eq 550
+}
+
+docs {
+  Фильма нет в movies - backend берёт его из TMDB и сохраняет, следующий запрос идёт из movies.
+  Нужен TMDB_ACCESS_TOKEN в .env backend, без него - 503 MOVIE_UNAVAILABLE. Если 550 уже есть в
+  movies: DELETE FROM movies WHERE movie_id = 550.
+}

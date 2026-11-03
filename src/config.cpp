@@ -145,5 +145,6 @@ Config loadConfig()
                    .clientSecret = std::string(env("OIDC_GOOGLE_CLIENT_SECRET").value_or(""))},
         .vk = {.clientId = std::string(env("OIDC_VK_CLIENT_ID").value_or(""))},
         .ml = readMl(),
+        .tmdbAccessToken = std::string(env("TMDB_ACCESS_TOKEN").value_or("")),
     };
 }
