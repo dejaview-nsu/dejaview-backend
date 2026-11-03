@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 
 // Серверные сессии (тег Auth в api/openapi.yaml): в cookie dv_session случайный токен, в
@@ -43,6 +44,11 @@ drogon::Task<drogon::HttpResponsePtr> startSession(drogon::orm::DbClientPtr db,
 //   if (!user) co_return user.error();
 drogon::Task<std::expected<SessionUser, drogon::HttpResponsePtr>> requireSession(
     drogon::orm::DbClientPtr db, drogon::HttpRequestPtr req);
+
+// Пользователь действующей сессии или nullopt - гость. Для операций гостя, которым важно, кто
+// спрашивает (свой отзыв в список отзывов не входит): без 401 и без записи в журнал.
+drogon::Task<std::optional<SessionUser>> currentUser(drogon::orm::DbClientPtr db,
+                                                     drogon::HttpRequestPtr req);
 
 // Сессия определяется один раз на запрос, для всех маршрутов: main.cpp регистрирует эти функции
 // как advices Drogon - до обработчика и после.

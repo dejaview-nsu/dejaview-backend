@@ -8,6 +8,7 @@
 #include "error_response.hpp"
 #include "health.hpp"
 #include "movies/card.hpp"
+#include "reviews.hpp"
 #include "search/search.hpp"
 
 #include <drogon/drogon.h>
@@ -157,5 +158,8 @@ int main()
         .registerHandler("/api/v1/movies/{movie_id}",
                          [db, tmdb](HttpRequestPtr, std::string movieId)
                          { return movieCardHandler(db, tmdb, std::move(movieId)); }, {Get})
+        .registerHandler("/api/v1/movies/{movie_id}/reviews",
+                         [db](HttpRequestPtr req, std::string movieId)
+                         { return movieReviewsHandler(db, req, std::move(movieId)); }, {Get})
         .run();
 }

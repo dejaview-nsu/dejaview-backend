@@ -1,0 +1,26 @@
+meta {
+  name: Отзывы о фильме
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/movies/157336/reviews?sort=newest&page=1
+  body: none
+  auth: none
+}
+
+params:query {
+  sort: newest
+  page: 1
+}
+
+assert {
+  res.status: eq 200
+  res.body.has_more: isBoolean
+}
+
+docs {
+  sort: best (по умолчанию), worst, newest, oldest; page с 1, по 10 отзывов. Отзывы пока только
+  вставкой в БД - пример в docs/frontend.md («Как проверить экраны»).
+}

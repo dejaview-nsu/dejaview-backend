@@ -9,7 +9,7 @@
 Регистрация, подтверждение email, повторная отправка письма, вход по паролю с CAPTCHA и
 блокировкой, текущая сессия, выход, вход и регистрация через Яндекс, Google и VK ID,
 восстановление пароля по ссылке из письма, смена пароля из профиля, карточка фильма: из каталога,
-а фильм не из каталога backend получает из TMDB.
+а фильм не из каталога backend получает из TMDB; список отзывов о фильме (писать отзывы - Sprint 5).
 
 ## Как ходить в API
 
@@ -58,6 +58,7 @@
 | Профиль → «Безопасность» → «Сменить пароль» | `PUT /users/me/password` с `current_password` и `new_password` | При `has_password: false` из `GET /auth/session` поля «Текущий пароль» нет, `current_password` не отправлять. 204 - пароль изменён, другие сессии завершены → «Пароль успешно изменён»; 400 с `field: current_password` - пустой или неверный (`AUTH_CURRENT_PASSWORD_INVALID`), с `field: new_password` - правила или совпадение с текущим |
 | Вход | `POST /auth/login` | `captcha_required: true` или 403 `AUTH_CAPTCHA_REQUIRED` → виджет CAPTCHA, затем та же форма с `captcha_token`; 429 - блокировка, через сколько секунд - заголовок `Retry-After`; 403 `AUTH_EMAIL_NOT_CONFIRMED` → «Отправить новую ссылку» с тем же `login` |
 | Страница фильма | `GET /movies/{movie_id}`, гостю тоже | 200 - карточка `MovieCard`: пустые поля - `null` и `[]`, блок с ними не показывать; 404 `MOVIE_NOT_FOUND` - сообщение вместо карточки; 503 `MOVIE_UNAVAILABLE` - фильма нет в каталоге, а TMDB недоступен: сообщение из ответа, можно повторить позже |
+| Страница фильма, блок «Отзывы» | `GET /movies/{movie_id}/reviews?sort=...&page=...`, гостю тоже | 200 `{reviews, has_more}`: «+N» под отзывом - `likes - dislikes`, `username: null` - «Удаленный пользователь», `created_at` в UTC - показать в поясе пользователя. «Еще отзывы» - `page + 1` с той же `sort`, пока `has_more`. Вошедший пользователь своего отзыва в списке не увидит. 400 `INVALID_PARAMETER` - ошибка в `sort` или `page` |
 | `/auth/oidc?provider=...&result=...` - возврат от провайдера | по `result` | `success` - вошёл; `registration_required` → `GET /auth/oidc/pending` → форма с `suggested_username` и годом рождения → `POST /auth/oidc/complete`; `link_required` → `pending` даёт `email` → обычный вход с паролем, провайдер привяжется сам; `account_blocked`, `error` - сообщение. 410 `AUTH_OIDC_EXPIRED` - 30 минут прошли, войти заново |
 
 ## CAPTCHA
@@ -124,6 +125,7 @@ backend выключена: `captcha_required` всегда `false`, работ�
 | Заблокированная учётная запись | `UPDATE users SET status = 'blocked' WHERE username = '<имя>';` - вход: `AUTH_ACCOUNT_BLOCKED`, открытая сессия: 401 `SESSION_EXPIRED` |
 | Сессия истекла | `DELETE FROM sessions;` |
 | Карточка фильма | в локальной БД каталога нет - фильм вставить, ниже |
+| Отзывы о фильме | писать отзывы можно будет в Sprint 5 - пока вставить, ниже |
 
 **Страницы OIDC без провайдера.** Незавершённый вход, каким его оставляет возврат от провайдера:
 
@@ -161,6 +163,21 @@ VALUES (157336, 'Интерстеллар', 'Interstellar', '2014-11-05', '12+',
 Карточка - `GET /api/v1/movies/157336`, фильм без данных - тот же `INSERT` только с `movie_id`,
 `title` и `original_title`. Фильм не из каталога backend берёт из TMDB, если в его `.env` задан
 `TMDB_ACCESS_TOKEN`; без ключа такой фильм получает 503.
+
+**Отзывы о фильме.** 25 отзывов без автора («Удаленный пользователь») на фильм из примера выше,
+у первого - заголовок и три реакции от пользователей из БД:
+
+```sql
+INSERT INTO reviews (movie_id, verdict, title, body, created_at)
+SELECT 157336, (ARRAY['positive', 'neutral', 'negative'])[g % 3 + 1],
+       CASE WHEN g = 1 THEN 'Космос, время и отцовство' END,
+       'Отзыв ' || g || '. ' || repeat('Текст отзыва. ', 25), now() - g * interval '1 hour'
+FROM generate_series(1, 25) AS g;
+INSERT INTO review_reactions (review_id, user_id, reaction)
+SELECT (SELECT min(review_id) FROM reviews), user_id, 1 FROM users LIMIT 3;
+```
+
+Отзывы - `GET /api/v1/movies/157336/reviews?sort=newest&page=2`.
 
 ## Примеры запросов
 

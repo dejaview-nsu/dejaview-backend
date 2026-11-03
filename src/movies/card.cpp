@@ -13,11 +13,6 @@ namespace
 // Фото актёра на CDN TMDB: к адресу дописывается profile_path (контракт, MovieActor)
 constexpr std::string_view kPhotoBaseUrl = "https://image.tmdb.org/t/p/w185";
 
-HttpResponsePtr movieNotFound()
-{
-    return errorResponse(k404NotFound, "MOVIE_NOT_FOUND", "Фильм не найден");
-}
-
 HttpResponsePtr movieUnavailable()
 {
     return errorResponse(k503ServiceUnavailable, "MOVIE_UNAVAILABLE",
@@ -77,6 +72,11 @@ Task<> saveMovie(orm::DbClientPtr db, const TmdbMovie &movie)
         movie.crew.toStyledString(), movie.actors.toStyledString());
 }
 }  // namespace
+
+HttpResponsePtr movieNotFound()
+{
+    return errorResponse(k404NotFound, "MOVIE_NOT_FOUND", "Фильм не найден");
+}
 
 std::optional<std::int64_t> parseMovieId(std::string_view text)
 {
