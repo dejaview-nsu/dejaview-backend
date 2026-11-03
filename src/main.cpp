@@ -7,6 +7,7 @@
 #include "config.hpp"
 #include "error_response.hpp"
 #include "health.hpp"
+#include "movies.hpp"
 #include "search/search.hpp"
 
 #include <drogon/drogon.h>
@@ -146,5 +147,7 @@ int main()
                          { return mediaSearchHandler(db, ml, MediaKind::Audio, req); }, {Post})
         .registerHandler("/api/v1/search/text", [db, ml](HttpRequestPtr req)
                          { return textSearchHandler(db, ml, req); }, {Post})
+        .registerHandler("/api/v1/movies/{movie_id}", [db](HttpRequestPtr, std::string movieId)
+                         { return movieCardHandler(db, std::move(movieId)); }, {Get})
         .run();
 }

@@ -8,7 +8,10 @@
 
 Регистрация, подтверждение email, повторная отправка письма, вход по паролю с CAPTCHA и
 блокировкой, текущая сессия, выход, вход и регистрация через Яндекс, Google и VK ID,
-восстановление пароля по ссылке из письма, смена пароля из профиля.
+восстановление пароля по ссылке из письма, смена пароля из профиля, карточка фильма из каталога.
+
+Пока не сделано: фильм, которого нет в каталоге (`movies`), не подтягивается из TMDB - карточка
+отвечает 404 (#18843).
 
 ## Как ходить в API
 
@@ -56,6 +59,7 @@
 | `/forgot-password` - кнопка «Восстановить пароль» в письме «Пароль изменён», маршрут задаёт backend | - | форма запроса восстановления, как по «Забыли пароль?» |
 | Профиль → «Безопасность» → «Сменить пароль» | `PUT /users/me/password` с `current_password` и `new_password` | При `has_password: false` из `GET /auth/session` поля «Текущий пароль» нет, `current_password` не отправлять. 204 - пароль изменён, другие сессии завершены → «Пароль успешно изменён»; 400 с `field: current_password` - пустой или неверный (`AUTH_CURRENT_PASSWORD_INVALID`), с `field: new_password` - правила или совпадение с текущим |
 | Вход | `POST /auth/login` | `captcha_required: true` или 403 `AUTH_CAPTCHA_REQUIRED` → виджет CAPTCHA, затем та же форма с `captcha_token`; 429 - блокировка, через сколько секунд - заголовок `Retry-After`; 403 `AUTH_EMAIL_NOT_CONFIRMED` → «Отправить новую ссылку» с тем же `login` |
+| Страница фильма | `GET /movies/{movie_id}`, гостю тоже | 200 - карточка `MovieCard`: пустые поля - `null` и `[]`, блок с ними не показывать; 404 `MOVIE_NOT_FOUND` - сообщение вместо карточки |
 | `/auth/oidc?provider=...&result=...` - возврат от провайдера | по `result` | `success` - вошёл; `registration_required` → `GET /auth/oidc/pending` → форма с `suggested_username` и годом рождения → `POST /auth/oidc/complete`; `link_required` → `pending` даёт `email` → обычный вход с паролем, провайдер привяжется сам; `account_blocked`, `error` - сообщение. 410 `AUTH_OIDC_EXPIRED` - 30 минут прошли, войти заново |
 
 ## CAPTCHA
@@ -121,6 +125,7 @@ backend выключена: `captcha_required` всегда `false`, работ�
 | Блокировка входа | 5 неверных паролей подряд; снять: `UPDATE users SET failed_login_count = 0, locked_until = NULL;` |
 | Заблокированная учётная запись | `UPDATE users SET status = 'blocked' WHERE username = '<имя>';` - вход: `AUTH_ACCOUNT_BLOCKED`, открытая сессия: 401 `SESSION_EXPIRED` |
 | Сессия истекла | `DELETE FROM sessions;` |
+| Карточка фильма | в локальной БД каталога нет - фильм вставить, ниже |
 
 **Страницы OIDC без провайдера.** Незавершённый вход, каким его оставляет возврат от провайдера:
 
@@ -139,6 +144,24 @@ location.href = '/auth/oidc?provider=yandex&result=registration_required';
 ```
 
 Для `link_required` - в `INSERT` добавить `link_user_id` существующего пользователя и его email.
+
+**Фильм для карточки.** Каталог собирает `scripts/catalog` в `dejaview-ml`, локально его можно
+заменить одной строкой:
+
+```sql
+INSERT INTO movies (movie_id, title, original_title, release_date, age_rating, poster_path,
+                    runtime_min, overview, genres, countries, crew, actors)
+VALUES (157336, 'Интерстеллар', 'Interstellar', '2014-11-05', '12+',
+        '/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', 169,
+        'Группа исследователей отправляется через червоточину.',
+        '[{"id": 878, "name": "фантастика"}]', '[{"code": "US", "name": "США"}]',
+        '[{"person_id": 525, "name": "Кристофер Нолан", "role": "director"}]',
+        '[{"person_id": 3895, "name": "Майкл Кейн", "character": "профессор Брэнд",
+           "profile_path": null}]');
+```
+
+Карточка - `GET /api/v1/movies/157336`, фильм без данных - тот же `INSERT` только с `movie_id`,
+`title` и `original_title`.
 
 ## Примеры запросов
 
