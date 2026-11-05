@@ -34,6 +34,16 @@ Email confirmEmail()
     return *renderEmail("email_confirm", "ivan@example.com", "movie_fan_42",
                         "https://dejaview.ru/confirm-email?token=abc");
 }
+
+// Ответы SMTP-сервера, как их отдаёт libcurl: сеанс до текста письма включительно
+const std::string kRepliesUntilMessage =
+    "220 smtp.example.com ESMTP\r\n"
+    "250-smtp.example.com\r\n"
+    "250 AUTH LOGIN PLAIN\r\n"
+    "235 2.7.0 Authentication successful\r\n"
+    "250 2.1.0 Sender OK\r\n"
+    "250 2.1.5 Recipient OK\r\n"
+    "354 Start mail input\r\n";
 }  // namespace
 
 TEST(RenderEmailTest, ConfirmEmailHasLinkAndName)
@@ -217,6 +227,68 @@ TEST(EncodeHeaderTest, LineBreaksCannotInjectHeaders)
         EXPECT_EQ(encoded.find("\r\nBcc"), std::string::npos) << encoded;
         EXPECT_EQ(decodeHeader(encoded), subject);
     }
+}
+
+TEST(SendErrorTest, AddsServerRejection)
+{
+    EXPECT_EQ(sendError("Weird server reply", kRepliesUntilMessage + "554 5.7.1 Rejected\r\n",
+                        "ivan@example.com"),
+              "Weird server reply: 554 5.7.1 Rejected");
+}
+
+TEST(SendErrorTest, JoinsLinesOfLastReplyOnly)
+{
+    EXPECT_EQ(sendError("Weird server reply",
+                        kRepliesUntilMessage + "451-4.7.1 Try again\r\n451 4.7.1 later\r\n",
+                        "ivan@example.com"),
+              "Weird server reply: 451-4.7.1 Try again 451 4.7.1 later");
+}
+
+TEST(SendErrorTest, ReplyMayBeCodeOnly)
+{
+    // текст после кода необязателен (RFC 5321 п. 4.2)
+    EXPECT_EQ(sendError("Weird server reply", kRepliesUntilMessage + "554\r\n", "ivan@example.com"),
+              "Weird server reply: 554");
+}
+
+TEST(SendErrorTest, WithoutRejectionOnlyCurlError)
+{
+    // сервер ждал текст письма, а соединение оборвалось: ответ сервера ни при чём
+    EXPECT_EQ(sendError("Timeout was reached", kRepliesUntilMessage, "ivan@example.com"),
+              "Timeout was reached");
+    EXPECT_EQ(sendError("Couldn't connect to server", "", "ivan@example.com"),
+              "Couldn't connect to server");
+}
+
+TEST(SendErrorTest, HidesRecipientAddress)
+{
+    EXPECT_EQ(sendError("Weird server reply",
+                        kRepliesUntilMessage + "550 5.1.1 <ivan@example.com>: user unknown\r\n",
+                        "ivan@example.com"),
+              "Weird server reply: 550 5.1.1 <***>: user unknown");
+    // регистр сервер может поменять
+    EXPECT_EQ(sendError("Weird server reply",
+                        kRepliesUntilMessage + "550 5.1.1 <ivan@example.com> IVAN@EXAMPLE.COM\r\n",
+                        "Ivan@Example.com"),
+              "Weird server reply: 550 5.1.1 <***> ***");
+}
+
+TEST(SendErrorTest, KeepsOnlyPrintableAscii)
+{
+    // ответ приходит по сети: \r подделал бы строку лога, а байты не UTF-8 PostgreSQL не примет
+    // в last_error
+    EXPECT_EQ(
+        sendError("Weird server reply",
+                  kRepliesUntilMessage + "554 bad\rWARN fake \xD0\xFF\x01\r\n", "ivan@example.com"),
+        "Weird server reply: 554 bad?WARN fake ???");
+}
+
+TEST(SendErrorTest, CutsLongReply)
+{
+    const std::string error = sendError(
+        "Weird server reply", kRepliesUntilMessage + "554 " + std::string(10'000, 'x') + "\r\n",
+        "ivan@example.com");
+    EXPECT_EQ(error, "Weird server reply: 554 " + std::string(508, 'x'));
 }
 
 TEST(RetryDelayTest, DoublesUpToAnHour)

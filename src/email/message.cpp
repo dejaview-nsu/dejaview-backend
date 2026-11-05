@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <format>
+#include <ranges>
 
 namespace
 {
@@ -76,6 +77,50 @@ std::string htmlEscape(std::string_view text)
     return result;
 }
 
+// Печатные ASCII-символы - от пробела (0x20) до тильды (0x7E). Байты UTF-8 кириллицы (0xD0 и
+// выше) и управляющие символы вроде \r\n сюда не попадают
+bool isPrintableAscii(char c)
+{
+    const auto byte = static_cast<unsigned char>(c);
+    return byte >= 0x20 && byte < 0x7F;
+}
+
+// Всё, кроме печатного ASCII, - на «?»
+std::string printableAscii(std::string_view text)
+{
+    std::string result(text);
+    std::ranges::replace_if(result, [](char c) { return !isPrintableAscii(c); }, '?');
+    return result;
+}
+
+std::string asciiLower(std::string_view text)
+{
+    std::string result(text);
+    std::ranges::transform(result, result.begin(),
+                           [](char c) -> char { return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c; });
+    return result;
+}
+
+// Каждое вхождение address - на «***», без учёта регистра: сервер может вернуть адрес, например,
+// строчными буквами
+std::string hideAddress(std::string text, std::string_view address)
+{
+    constexpr std::string_view kHidden = "***";
+    const std::string needle = asciiLower(address);
+    if (needle.empty())
+    {
+        return text;  // пустая строка «нашлась» бы между каждыми двумя символами
+    }
+    std::string lower = asciiLower(text);  // те же позиции, что в text
+    for (auto at = lower.find(needle); at != std::string::npos;
+         at = lower.find(needle, at + kHidden.size()))
+    {
+        text.replace(at, needle.size(), kHidden);
+        lower.replace(at, needle.size(), kHidden);
+    }
+    return text;
+}
+
 // Подстановка в шаблон: каждое {{name}} - экранированное значение. Не std::format: фигурные
 // скобки в шаблоне могут быть и свои (CSS), и их не нужно удваивать
 std::string fillTemplate(std::string_view html, std::string_view name, std::string_view value)
@@ -93,6 +138,48 @@ std::string fillTemplate(std::string_view html, std::string_view name, std::stri
 
 // Граница между частями письма. «=_» не встречается в base64, а текстовая часть - наш шаблон
 constexpr std::string_view kBoundary = "=_dejaview_part_=";
+
+// Строка ответа SMTP-сервера: код из трёх цифр, за ним «-», если ответ продолжается следующей
+// строкой, иначе пробел или конец строки (RFC 5321 п. 4.2)
+constexpr std::size_t kReplyCodeLength = 3;
+constexpr char kReplyContinues = '-';
+
+// Последний ответ сеанса, его строки через пробел. replies - строки, как их отдаёт libcurl:
+// каждая заканчивается \n или \r\n
+std::string lastReply(std::string_view replies)
+{
+    std::string reply;
+    bool replyEnded = true;
+    for (const auto part : std::views::split(replies, '\n'))
+    {
+        std::string_view line(part.begin(), part.end());
+        if (line.ends_with('\r'))
+        {
+            line.remove_suffix(1);
+        }
+        if (line.empty())
+        {
+            continue;
+        }
+        if (replyEnded)
+        {
+            reply.clear();
+        }
+        else
+        {
+            reply += ' ';
+        }
+        reply += line;
+        replyEnded = line.size() <= kReplyCodeLength || line[kReplyCodeLength] != kReplyContinues;
+    }
+    return reply;
+}
+
+// Отказ - коды 4yz (временный) и 5yz (постоянный), RFC 5321 п. 4.2.1
+bool isRejection(std::string_view reply)
+{
+    return reply.starts_with('4') || reply.starts_with('5');
+}
 }  // namespace
 
 std::optional<Email> renderEmail(std::string_view kind, std::string_view to,
@@ -190,15 +277,7 @@ std::string formatMessage(const Email &email, std::string_view from,
 
 std::string encodeHeader(std::string_view text)
 {
-    // Печатные ASCII-символы - от пробела (0x20) до тильды (0x7E). Байты UTF-8 кириллицы
-    // (0xD0 и выше) и управляющие символы вроде \r\n сюда не попадают
-    const bool ascii = std::ranges::all_of(text,
-                                           [](char c)
-                                           {
-                                               const auto byte = static_cast<unsigned char>(c);
-                                               return byte >= 0x20 && byte < 0x7F;
-                                           });
-    if (ascii)
+    if (std::ranges::all_of(text, isPrintableAscii))
     {
         return std::string(text);
     }
@@ -223,6 +302,24 @@ std::string encodeHeader(std::string_view text)
         text.remove_prefix(size);
     }
     return result;
+}
+
+std::string sendError(std::string_view curlError, std::string_view replies, std::string_view to)
+{
+    // Обычный отказ - одна-две строки; длиннее в лог и last_error не идёт
+    constexpr std::size_t kMaxReplyLength = 512;
+
+    // Ответ пришёл по сети: только печатный ASCII - в лог не попадут переводы строк, в БД -
+    // байты не UTF-8. Адрес приводится к тому же виду, иначе не нашёлся бы в ответе, и скрывается
+    // до обрезки: обрезанный адрес тоже не нашёлся бы
+    const std::string reply = printableAscii(lastReply(replies));
+    if (!isRejection(reply))
+    {
+        return std::string(curlError);
+    }
+    std::string text = hideAddress(reply, printableAscii(to));
+    text.resize(std::min(text.size(), kMaxReplyLength));
+    return std::string(curlError) + ": " + text;
 }
 
 int retryDelaySeconds(int failedAttempts)
