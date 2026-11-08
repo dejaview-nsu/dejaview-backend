@@ -26,9 +26,22 @@ size_t readMessage(char *buffer, size_t size, size_t count, void *userdata)
     return length;
 }
 
+// Ответы SMTP-сервера libcurl отдаёт строками, как заголовки; userdata - все ответы сеанса.
+// Обычный сеанс - около килобайта, больше kMaxRepliesBytes не копится, даже если сервер шлёт
+// ответ без конца
+size_t collectReplies(char *buffer, size_t size, size_t count, void *userdata)
+{
+    constexpr size_t kMaxRepliesBytes = 64 * 1024;
+    auto *replies = static_cast<std::string *>(userdata);
+    const size_t length = size * count;
+    replies->append(buffer, std::min(length, kMaxRepliesBytes - replies->size()));
+    return length;
+}
+
 // Одно письмо по SMTP. Возвращает текст ошибки для email_outbox.last_error, пустой - отправлено.
 std::string sendEmail(const SmtpConfig &smtp, const std::string &to, const std::string &message)
 {
+    std::string replies;
     // unique_ptr с функцией очистки: curl освобождается на любом выходе из функции
     const std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(),
                                                                    curl_easy_cleanup);
@@ -60,13 +73,15 @@ std::string sendEmail(const SmtpConfig &smtp, const std::string &to, const std::
     // без сигналов: в многопоточной программе таймаут через SIGALRM опасен
     curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl.get(), CURLOPT_ERRORBUFFER, error);
+    curl_easy_setopt(curl.get(), CURLOPT_HEADERFUNCTION, collectReplies);
+    curl_easy_setopt(curl.get(), CURLOPT_HEADERDATA, &replies);
 
     const CURLcode code = curl_easy_perform(curl.get());
     if (code == CURLE_OK)
     {
         return "";
     }
-    return error[0] != '\0' ? error : curl_easy_strerror(code);
+    return sendError(error[0] != '\0' ? error : curl_easy_strerror(code), replies, to);
 }
 }  // namespace
 
