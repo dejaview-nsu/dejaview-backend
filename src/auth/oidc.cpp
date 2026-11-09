@@ -236,14 +236,14 @@ struct ProviderSpec
 };
 
 constexpr ProviderSpec kProviders[] = {
-    // force_confirm: без него Яндекс, если доступ уже разрешён, молча входит под текущим
-    // аккаунтом - выбрать другой нельзя
+    // extraParams: без них провайдер, если доступ уже разрешён, молча входит под текущим
+    // аккаунтом - выбрать другой нельзя. У VK ID выбора аккаунта нет, есть только повторный вход
     {"yandex", "https://oauth.yandex.ru/authorize", "login:email login:info", fetchYandexProfile,
      &OidcSettings::yandex, "&force_confirm=yes"},
     {"google", "https://accounts.google.com/o/oauth2/v2/auth", "openid email profile",
-     fetchGoogleProfile, &OidcSettings::google},
+     fetchGoogleProfile, &OidcSettings::google, "&prompt=select_account"},
     {"vk", "https://id.vk.com/authorize", "vkid.personal_info email", fetchVkProfile,
-     &OidcSettings::vk},
+     &OidcSettings::vk, "&prompt=login"},
 };
 
 // Провайдер из пути запроса: есть в таблице и для него задано приложение. Иначе nullptr
