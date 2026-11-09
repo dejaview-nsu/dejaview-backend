@@ -101,6 +101,21 @@ TEST_F(OidcTest, StartRedirectsToProviderWithStateAndPkce)
     EXPECT_EQ(scalar("SELECT expires_at - created_at FROM oidc_pending"), "00:30:00");
 }
 
+// Без этих параметров провайдер молча входит под текущим аккаунтом, если доступ уже разрешён
+TEST_F(OidcTest, StartLetsChooseAnotherAccount)
+{
+    settings.google = {.clientId = "google-id", .clientSecret = "google-secret"};
+    settings.vk = {.clientId = "vk-id"};
+    for (const auto &[provider, params] :
+         {std::pair{"yandex", "&force_confirm=yes"}, std::pair{"google", "&prompt=select_account"},
+          std::pair{"vk", "&prompt=login"}})
+    {
+        const auto response = run(oidcStartHandler(db, settings, request(Get, "/start"), provider));
+        EXPECT_TRUE(response->getHeader("Location").ends_with(params))
+            << response->getHeader("Location");
+    }
+}
+
 TEST_F(OidcTest, UnknownOrDisabledProviderEndsWithError)
 {
     for (const char *provider : {"facebook", "google"})  // google без ключей - выключен
