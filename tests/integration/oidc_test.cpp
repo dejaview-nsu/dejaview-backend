@@ -101,6 +101,14 @@ TEST_F(OidcTest, StartRedirectsToProviderWithStateAndPkce)
     EXPECT_EQ(scalar("SELECT expires_at - created_at FROM oidc_pending"), "00:30:00");
 }
 
+// Без force_confirm Яндекс молча входит под текущим аккаунтом, если доступ уже разрешён
+TEST_F(OidcTest, YandexStartAsksToConfirmAndChooseAccount)
+{
+    const auto response = run(oidcStartHandler(db, settings, request(Get, "/start"), "yandex"));
+    EXPECT_TRUE(response->getHeader("Location").ends_with("&force_confirm=yes"))
+        << response->getHeader("Location");
+}
+
 TEST_F(OidcTest, UnknownOrDisabledProviderEndsWithError)
 {
     for (const char *provider : {"facebook", "google"})  // google без ключей - выключен
