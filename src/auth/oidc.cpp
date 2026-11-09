@@ -232,7 +232,7 @@ struct ProviderSpec
     Task<std::optional<OidcProfile>> (*fetchProfile)(CodeExchange exchange);
     // Указатель на поле OidcSettings с приложением этого провайдера: settings.*client
     OidcClient OidcSettings::*client;
-    std::string_view extraParams = "";  // свои параметры провайдера в адресе authorizeUrl
+    std::string_view extraParams;  // свои параметры провайдера в адресе authorizeUrl
 };
 
 constexpr ProviderSpec kProviders[] = {
