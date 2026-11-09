@@ -232,11 +232,14 @@ struct ProviderSpec
     Task<std::optional<OidcProfile>> (*fetchProfile)(CodeExchange exchange);
     // Указатель на поле OidcSettings с приложением этого провайдера: settings.*client
     OidcClient OidcSettings::*client;
+    std::string_view extraParams = "";  // свои параметры провайдера в адресе authorizeUrl
 };
 
 constexpr ProviderSpec kProviders[] = {
+    // force_confirm: без него Яндекс, если доступ уже разрешён, молча входит под текущим
+    // аккаунтом - выбрать другой нельзя
     {"yandex", "https://oauth.yandex.ru/authorize", "login:email login:info", fetchYandexProfile,
-     &OidcSettings::yandex},
+     &OidcSettings::yandex, "&force_confirm=yes"},
     {"google", "https://accounts.google.com/o/oauth2/v2/auth", "openid email profile",
      fetchGoogleProfile, &OidcSettings::google},
     {"vk", "https://id.vk.com/authorize", "vkid.personal_info email", fetchVkProfile,
@@ -288,13 +291,14 @@ Task<HttpResponsePtr> oidcStartHandler(orm::DbClientPtr db, OidcSettings setting
         "VALUES (decode($1, 'hex'), $2, $3, $4, now() + $5::int * interval '1 second')",
         tokenHash(token), provider, state, codeVerifier, kPendingSeconds);
 
-    // Параметры одинаковы у всех провайдеров: это стандарт OAuth2 (RFC 6749) и PKCE (RFC 7636)
+    // Общие параметры - стандарт OAuth2 (RFC 6749) и PKCE (RFC 7636), за ними - свои у провайдера
     auto response = HttpResponse::newRedirectionResponse(std::format(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}"
-        "&code_challenge={}&code_challenge_method=S256",
+        "&code_challenge={}&code_challenge_method=S256{}",
         spec->authorizeUrl, utils::urlEncodeComponent((settings.*(spec->client)).clientId),
         utils::urlEncodeComponent(redirectUri(settings, provider)),
-        utils::urlEncodeComponent(std::string(spec->scope)), state, pkceChallenge(codeVerifier)));
+        utils::urlEncodeComponent(std::string(spec->scope)), state, pkceChallenge(codeVerifier),
+        spec->extraParams));
     response->addCookie(oidcCookie(token));
     co_return response;
 }
