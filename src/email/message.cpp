@@ -322,6 +322,23 @@ std::string sendError(std::string_view curlError, std::string_view replies, std:
     return std::string(curlError) + ": " + text;
 }
 
+std::optional<std::string> shortLink(std::string_view reply)
+{
+    while (reply.ends_with('\n') || reply.ends_with('\r'))
+    {
+        reply.remove_suffix(1);
+    }
+    const bool isLink =
+        (reply.starts_with("https://") || reply.starts_with("http://")) &&
+        reply.size() <= kMaxShortLinkLength &&
+        std::ranges::all_of(reply, [](char c) { return isPrintableAscii(c) && c != ' '; });
+    if (!isLink)
+    {
+        return std::nullopt;
+    }
+    return std::string(reply);
+}
+
 int retryDelaySeconds(int failedAttempts)
 {
     constexpr int kMaxDelaySeconds = 60 * 60;
