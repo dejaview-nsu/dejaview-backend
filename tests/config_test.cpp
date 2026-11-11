@@ -172,7 +172,8 @@ TEST_F(LoadConfigTest, LinkShortenerIsOptional)
 
 TEST_F(LoadConfigTest, RejectsInvalidLinkShortener)
 {
-    for (const char *url : {"clck.ru/--", "ftp://clck.ru/--"})
+    // http - полные ссылки с токенами ушли бы сокращателю открытым текстом
+    for (const char *url : {"clck.ru/--", "ftp://clck.ru/--", "http://clck.ru/--"})
     {
         SCOPED_TRACE(url);
         setenv("EMAIL_LINK_SHORTENER", url, 1);
