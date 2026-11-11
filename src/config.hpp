@@ -14,6 +14,9 @@ struct SmtpConfig
     std::string from;  // адрес отправителя: noreply@dejaview.ru
     std::string user;  // пустой - без авторизации (Mailpit)
     std::string password;
+    // EMAIL_LINK_SHORTENER: сокращатель ссылок в письмах, https://clck.ru/--. Пустой - ссылки как
+    // есть. Временный обход #18974, риск - в docs/email.md
+    std::string linkShortener;
 };
 
 // Приложение у OIDC-провайдера (#17148 п. 3). Пустой clientId - вход через провайдера выключен.
