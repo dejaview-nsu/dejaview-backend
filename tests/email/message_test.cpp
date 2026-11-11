@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -291,21 +292,22 @@ TEST(SendErrorTest, CutsLongReply)
     EXPECT_EQ(error, "Weird server reply: 554 " + std::string(508, 'x'));
 }
 
+constexpr std::string_view kClck = "https://clck.ru/--";
+
 TEST(ShortLinkTest, TrimsLineBreakAtEnd)
 {
-    EXPECT_EQ(shortLink("https://clck.ru/3abcd"), "https://clck.ru/3abcd");
-    EXPECT_EQ(shortLink("https://clck.ru/3abcd\n"), "https://clck.ru/3abcd");
-    EXPECT_EQ(shortLink("https://clck.ru/3abcd\r\n"), "https://clck.ru/3abcd");
-    EXPECT_EQ(shortLink("http://127.0.0.1:8080/a"), "http://127.0.0.1:8080/a");
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd", kClck), "https://clck.ru/3abcd");
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd\n", kClck), "https://clck.ru/3abcd");
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd\r\n", kClck), "https://clck.ru/3abcd");
 }
 
 TEST(ShortLinkTest, LimitsLength)
 {
     const std::string prefix = "https://clck.ru/";
     const std::string longest = prefix + std::string(kMaxShortLinkLength - prefix.size(), 'a');
-    EXPECT_EQ(shortLink(longest), longest);
-    EXPECT_EQ(shortLink(longest + "\n"), longest);
-    EXPECT_EQ(shortLink(longest + "a"), std::nullopt);
+    EXPECT_EQ(shortLink(longest, kClck), longest);
+    EXPECT_EQ(shortLink(longest + "\n", kClck), longest);
+    EXPECT_EQ(shortLink(longest + "a", kClck), std::nullopt);
 }
 
 // Ответ пришёл по сети и идёт в письмо: страница с капчей или ошибкой - не ссылка
@@ -316,7 +318,7 @@ TEST(ShortLinkTest, RejectsNotALink)
                               "https://clck.ru/\xD0\xB0", " https://clck.ru/3abcd"})
     {
         SCOPED_TRACE(reply);
-        EXPECT_EQ(shortLink(reply), std::nullopt);
+        EXPECT_EQ(shortLink(reply, kClck), std::nullopt);
     }
 }
 

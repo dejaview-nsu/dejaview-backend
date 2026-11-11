@@ -133,10 +133,10 @@ std::expected<std::string, std::string> emailLink(const SmtpConfig &smtp, const 
     {
         return std::unexpected(std::format("сокращение ссылки: ответ HTTP {}", status));
     }
-    auto shortened = shortLink(reply);
+    auto shortened = shortLink(reply, smtp.linkShortener);
     if (!shortened)
     {
-        return std::unexpected("сокращение ссылки: в ответе не ссылка");
+        return std::unexpected("сокращение ссылки: в ответе не ссылка сокращателя");
     }
     return std::move(*shortened);
 }

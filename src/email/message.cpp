@@ -322,14 +322,24 @@ std::string sendError(std::string_view curlError, std::string_view replies, std:
     return std::string(curlError) + ": " + text;
 }
 
-std::optional<std::string> shortLink(std::string_view reply)
+std::optional<std::string> shortLink(std::string_view reply, std::string_view shortener)
 {
     while (reply.ends_with('\n') || reply.ends_with('\r'))
     {
         reply.remove_suffix(1);
     }
+    // Адрес сокращателя до пути со слешем: https://clck.ru/-- -> https://clck.ru/. Сравнение до
+    // слеша не пропустит https://clck.ru.evil.example/ и https://clck.ru@evil.example/
+    constexpr std::string_view kSchemeEnd = "://";
+    const std::size_t hostStart = shortener.find(kSchemeEnd);
+    if (hostStart == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+    const std::string origin =
+        std::string(shortener.substr(0, shortener.find('/', hostStart + kSchemeEnd.size()))) + '/';
     const bool isLink =
-        (reply.starts_with("https://") || reply.starts_with("http://")) &&
+        reply.starts_with(origin) && reply.size() > origin.size() &&
         reply.size() <= kMaxShortLinkLength &&
         std::ranges::all_of(reply, [](char c) { return isPrintableAscii(c) && c != ' '; });
     if (!isLink)

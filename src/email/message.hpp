@@ -39,11 +39,12 @@ std::string encodeHeader(std::string_view text);
 // «***»: адреса в лог не пишутся.
 std::string sendError(std::string_view curlError, std::string_view replies, std::string_view to);
 
-// Короткая ссылка из ответа сокращателя (EMAIL_LINK_SHORTENER, #18974) без перевода строки в
-// конце: http(s)://, не длиннее kMaxShortLinkLength, печатный ASCII без пробелов. Иначе - nullopt:
-// ответ пришёл по сети и идёт в письмо, а это может быть, например, страница с капчей.
+// Короткая ссылка из ответа сокращателя shortener (EMAIL_LINK_SHORTENER, #18974) без перевода
+// строки в конце: на том же адресе, что и сокращатель (схема, хост и порт), не длиннее
+// kMaxShortLinkLength, печатный ASCII без пробелов. Иначе - nullopt: ответ пришёл по сети и идёт
+// в письмо, а это может быть страница с капчей или ссылка на чужой сайт.
 constexpr std::size_t kMaxShortLinkLength = 256;
-std::optional<std::string> shortLink(std::string_view reply);
+std::optional<std::string> shortLink(std::string_view reply, std::string_view shortener);
 
 // Повторы при сбое SMTP (contracts/db-schema.md, email_outbox): после kMaxEmailAttempts
 // неудач письмо помечается failed. Паузы 1, 2, 4, ... минут, не больше часа: всего около

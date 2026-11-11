@@ -195,7 +195,8 @@ TEST_F(BackgroundTest, ShortenerReplacesLinkInTextAndHtml)
 {
     createUser("ivan", "ivan@example.com");
     queueEmail();
-    fakeReply("/--", drogon::k200OK, "https://clck.ru/3abcd\n");
+    const std::string shortened = fakeUrl + "/3abcd";
+    fakeReply("/--", drogon::k200OK, shortened + "\n");
     std::string text;
     {
         FakeSmtp smtp("250 OK\r\n", &text);
@@ -209,10 +210,10 @@ TEST_F(BackgroundTest, ShortenerReplacesLinkInTextAndHtml)
     // ссылка URL-кодирована: иначе её «?» и «&» смешались бы с параметрами сокращателя
     EXPECT_EQ(request->query(), "url=https%3A%2F%2Fx%2Fconfirm-email%3Ftoken%3Dt");
     EXPECT_EQ(request->getParameter("url"), "https://x/confirm-email?token=t");
-    EXPECT_TRUE(text.contains("https://clck.ru/3abcd\r\n")) << text;
+    EXPECT_TRUE(text.contains(shortened + "\r\n")) << text;
     EXPECT_FALSE(text.contains("token=")) << text;
     const std::string html = decodedHtml(text);
-    EXPECT_TRUE(html.contains("href=\"https://clck.ru/3abcd\"")) << html;
+    EXPECT_TRUE(html.contains("href=\"" + shortened + "\"")) << html;
     EXPECT_FALSE(html.contains("token=")) << html;
     EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox"), "0");
 }
@@ -229,7 +230,8 @@ TEST_F(BackgroundTest, ShortenerFailureIsRetriedWithoutSending)
     };
     createUser("ivan", "ivan@example.com");
     for (const auto &[status, reply, error] :
-         {Case{drogon::k200OK, "<html>captcha</html>", "сокращение ссылки: в ответе не ссылка"},
+         {Case{drogon::k200OK, "<html>captcha</html>",
+               "сокращение ссылки: в ответе не ссылка сокращателя"},
           Case{drogon::k503ServiceUnavailable, "https://clck.ru/3abcd",
                "сокращение ссылки: ответ HTTP 503"}})
     {
