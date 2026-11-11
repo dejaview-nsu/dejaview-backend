@@ -11,6 +11,8 @@
 - [ ] `API_URL` - не задавать, если API на том же домене (по умолчанию `APP_URL`).
 - [ ] `SMTP_URL=smtps://<сервер>:465`, `SMTP_FROM=noreply@<домен>`, `SMTP_USER`,
       `SMTP_PASSWORD` - см. [email.md](email.md), раздел «Продакшен».
+- [ ] `EMAIL_LINK_SHORTENER` - только если команда приняла риск из [email.md](email.md),
+      «Короткие ссылки»; выключить, когда появится сервис отправки.
 - [ ] `SMARTCAPTCHA_SERVER_KEY` - **обязателен**: без него CAPTCHA при входе выключена (в логе при
       старте `WARN ... CAPTCHA при входе отключена`).
 - [ ] `OIDC_YANDEX_*`, `OIDC_GOOGLE_*`, `OIDC_VK_CLIENT_ID` - для каждого включённого провайдера.
@@ -42,7 +44,8 @@ backend не стартует. `MINIO_*` и `INFERENCE_URL` оттуда backend
 - [ ] Почта: SPF, DKIM и DMARC для домена отправителя.
 - [ ] Исходящие соединения (если сервер их ограничивает): HTTPS до `oauth.yandex.ru`,
       `login.yandex.ru`, `oauth2.googleapis.com`, `openidconnect.googleapis.com`, `id.vk.com`,
-      `smartcaptcha.yandexcloud.net`, `api.themoviedb.org`; SMTP-сервер, порт 465.
+      `smartcaptcha.yandexcloud.net`, `api.themoviedb.org`; SMTP-сервер, порт 465; с
+      `EMAIL_LINK_SHORTENER` - и сокращатель (`clck.ru`).
 
 ## После запуска
 

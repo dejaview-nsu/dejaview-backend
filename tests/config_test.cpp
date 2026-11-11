@@ -23,11 +23,11 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("SMTP_USER");
         unsetenv("SMTP_PASSWORD");
         for (const char *name :
-             {"API_URL", "OIDC_YANDEX_CLIENT_ID", "OIDC_YANDEX_CLIENT_SECRET",
-              "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET", "OIDC_VK_CLIENT_ID", "ML_URL",
-              "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
-              "ML_TEXT_TIMEOUT_MS", "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS",
-              "TMDB_ACCESS_TOKEN"})
+             {"EMAIL_LINK_SHORTENER", "API_URL", "OIDC_YANDEX_CLIENT_ID",
+              "OIDC_YANDEX_CLIENT_SECRET", "OIDC_GOOGLE_CLIENT_ID", "OIDC_GOOGLE_CLIENT_SECRET",
+              "OIDC_VK_CLIENT_ID", "ML_URL", "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS",
+              "ML_VIDEO_TIMEOUT_MS", "ML_TEXT_TIMEOUT_MS", "ML_AUDIO_TIMEOUT_MS",
+              "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS", "TMDB_ACCESS_TOKEN"})
         {
             unsetenv(name);
         }
@@ -40,9 +40,10 @@ class LoadConfigTest : public ::testing::Test
         unsetenv("APP_URL");
         unsetenv("SMARTCAPTCHA_SERVER_KEY");
         for (const char *name :
-             {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD", "ML_URL", "ML_MAX_CONCURRENT",
-              "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS", "ML_TEXT_TIMEOUT_MS",
-              "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS", "TMDB_ACCESS_TOKEN"})
+             {"SMTP_URL", "SMTP_FROM", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_LINK_SHORTENER",
+              "ML_URL", "ML_MAX_CONCURRENT", "ML_IMAGE_TIMEOUT_MS", "ML_VIDEO_TIMEOUT_MS",
+              "ML_TEXT_TIMEOUT_MS", "ML_AUDIO_TIMEOUT_MS", "ML_FAILURES_TO_OPEN", "ML_OPEN_FOR_MS",
+              "TMDB_ACCESS_TOKEN"})
         {
             unsetenv(name);
         }
@@ -158,6 +159,26 @@ TEST_F(LoadConfigTest, SmtpCredentialsAreOptional)
     const SmtpConfig smtp = loadConfig().smtp;
     EXPECT_EQ(smtp.user, "");
     EXPECT_EQ(smtp.password, "");
+}
+
+TEST_F(LoadConfigTest, LinkShortenerIsOptional)
+{
+    EXPECT_EQ(loadConfig().smtp.linkShortener, "");
+    setenv("EMAIL_LINK_SHORTENER", "", 1);
+    EXPECT_EQ(loadConfig().smtp.linkShortener, "");
+    setenv("EMAIL_LINK_SHORTENER", "https://clck.ru/--", 1);
+    EXPECT_EQ(loadConfig().smtp.linkShortener, "https://clck.ru/--");
+}
+
+TEST_F(LoadConfigTest, RejectsInvalidLinkShortener)
+{
+    // http - полные ссылки с токенами ушли бы сокращателю открытым текстом
+    for (const char *url : {"clck.ru/--", "ftp://clck.ru/--", "http://clck.ru/--"})
+    {
+        SCOPED_TRACE(url);
+        setenv("EMAIL_LINK_SHORTENER", url, 1);
+        EXPECT_THROW(loadConfig(), std::runtime_error);
+    }
 }
 
 TEST_F(LoadConfigTest, RejectsInvalidSmtp)

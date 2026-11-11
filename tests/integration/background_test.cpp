@@ -3,6 +3,7 @@
 #include "integration/db_test.hpp"
 
 #include <netinet/in.h>
+#include <sodium.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -14,12 +15,15 @@
 namespace
 {
 // SMTP-сервер на 127.0.0.1 для одного сеанса: принимает отправителя, получателя и текст письма,
-// а на конец текста отвечает rejection
+// а на конец текста отвечает finalReply. text - куда сложить текст письма: читать после конца
+// блока с FakeSmtp, деструктор дожидается сеанса
 class FakeSmtp
 {
   public:
-    explicit FakeSmtp(std::string rejection)
-        : listener_(socket(AF_INET, SOCK_STREAM, 0)), rejection_(std::move(rejection))
+    explicit FakeSmtp(std::string finalReply, std::string *text = nullptr)
+        : listener_(socket(AF_INET, SOCK_STREAM, 0)),
+          finalReply_(std::move(finalReply)),
+          text_(text)
     {
         sockaddr_in address{};
         address.sin_family = AF_INET;
@@ -66,8 +70,12 @@ class FakeSmtp
             reply("354 Start mail input\r\n");
             while (readLine(client, line) && line != ".\r\n")
             {
+                if (text_)
+                {
+                    *text_ += line;
+                }
             }
-            reply(rejection_);
+            reply(finalReply_);
         }
         close(client);
     }
@@ -89,9 +97,30 @@ class FakeSmtp
 
     int listener_;
     std::uint16_t port_ = 0;
-    std::string rejection_;
+    std::string finalReply_;
+    std::string *text_;
     std::jthread thread_;
 };
+
+// HTML-часть письма раскодированной: в письме она base64 (formatMessage)
+std::string decodedHtml(const std::string &message)
+{
+    const std::string marker =
+        "Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n";
+    const std::size_t start = message.find(marker);
+    if (start == std::string::npos)
+    {
+        return "";
+    }
+    const std::size_t from = start + marker.size();
+    const std::string encoded = message.substr(from, message.find("--", from) - from);
+    std::string decoded(encoded.size(), '\0');
+    std::size_t length = 0;
+    sodium_base642bin(reinterpret_cast<unsigned char *>(decoded.data()), decoded.size(),
+                      encoded.data(), encoded.size(), "\r\n", &length, nullptr,
+                      sodium_base64_VARIANT_ORIGINAL);
+    return decoded.substr(0, length);
+}
 }  // namespace
 
 class BackgroundTest : public DbTest
@@ -146,6 +175,103 @@ TEST_F(BackgroundTest, RejectionReplyIsSavedWithoutAddress)
     EXPECT_TRUE(scalar("SELECT last_error FROM email_outbox")
                     .ends_with(": 554 5.7.1 <***> Message rejected"))
         << scalar("SELECT last_error FROM email_outbox");
+}
+
+TEST_F(BackgroundTest, LinkIsSentAsIsWithoutShortener)
+{
+    createUser("ivan", "ivan@example.com");
+    queueEmail();
+    std::string text;
+    {
+        FakeSmtp smtp("250 OK\r\n", &text);
+        sendPendingEmails(db, SmtpConfig{.url = smtp.url(), .from = "noreply@dejaview.ru"});
+    }
+
+    EXPECT_TRUE(text.contains("https://x/confirm-email?token=t\r\n")) << text;
+    EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox"), "0");
+}
+
+TEST_F(BackgroundTest, ShortenerReplacesLinkInTextAndHtml)
+{
+    createUser("ivan", "ivan@example.com");
+    queueEmail();
+    const std::string shortened = fakeUrl + "/3abcd";
+    fakeReply("/--", drogon::k200OK, shortened + "\n");
+    std::string text;
+    {
+        FakeSmtp smtp("250 OK\r\n", &text);
+        sendPendingEmails(db, SmtpConfig{.url = smtp.url(),
+                                         .from = "noreply@dejaview.ru",
+                                         .linkShortener = fakeUrl + "/--"});
+    }
+
+    const auto request = fakeReceived("/--");
+    ASSERT_NE(request, nullptr);
+    // ссылка URL-кодирована: иначе её «?» и «&» смешались бы с параметрами сокращателя
+    EXPECT_EQ(request->query(), "url=https%3A%2F%2Fx%2Fconfirm-email%3Ftoken%3Dt");
+    EXPECT_EQ(request->getParameter("url"), "https://x/confirm-email?token=t");
+    EXPECT_TRUE(text.contains(shortened + "\r\n")) << text;
+    EXPECT_FALSE(text.contains("token=")) << text;
+    const std::string html = decodedHtml(text);
+    EXPECT_TRUE(html.contains("href=\"" + shortened + "\"")) << html;
+    EXPECT_FALSE(html.contains("token=")) << html;
+    EXPECT_EQ(scalar("SELECT count(*) FROM email_outbox"), "0");
+}
+
+// Сбой сокращателя - как сбой отправки: письмо, в том числе с полной ссылкой, не уходит и ждёт
+// следующей попытки
+TEST_F(BackgroundTest, ShortenerFailureIsRetriedWithoutSending)
+{
+    struct Case
+    {
+        drogon::HttpStatusCode status;
+        std::string reply;
+        std::string error;
+    };
+    createUser("ivan", "ivan@example.com");
+    for (const auto &[status, reply, error] :
+         {Case{drogon::k200OK, "<html>captcha</html>",
+               "сокращение ссылки: в ответе не ссылка сокращателя"},
+          Case{drogon::k200OK, "https://evil.example/3abcd",
+               "сокращение ссылки: в ответе не ссылка сокращателя"},
+          Case{drogon::k503ServiceUnavailable, "https://clck.ru/3abcd",
+               "сокращение ссылки: ответ HTTP 503"}})
+    {
+        SCOPED_TRACE(error);
+        db->execSqlSync("DELETE FROM email_outbox");
+        queueEmail();
+        fakeReply("/--", status, reply);
+        std::string text;
+        {
+            FakeSmtp smtp("250 OK\r\n", &text);
+            sendPendingEmails(db, SmtpConfig{.url = smtp.url(),
+                                             .from = "noreply@dejaview.ru",
+                                             .linkShortener = fakeUrl + "/--"});
+        }
+
+        EXPECT_EQ(text, "");
+        EXPECT_EQ(scalar("SELECT status || ' ' || attempts FROM email_outbox"), "pending 1");
+        EXPECT_EQ(scalar("SELECT last_error FROM email_outbox"), error);
+    }
+}
+
+TEST_F(BackgroundTest, UnreachableShortenerIsRetried)
+{
+    createUser("ivan", "ivan@example.com");
+    queueEmail();
+    std::string text;
+    {
+        FakeSmtp smtp("250 OK\r\n", &text);
+        sendPendingEmails(db, SmtpConfig{.url = smtp.url(),
+                                         .from = "noreply@dejaview.ru",
+                                         .linkShortener = "http://127.0.0.1:1/--"});
+    }
+
+    EXPECT_EQ(text, "");
+    EXPECT_EQ(scalar("SELECT status || ' ' || attempts FROM email_outbox"), "pending 1");
+    const std::string error = scalar("SELECT last_error FROM email_outbox");
+    EXPECT_TRUE(error.starts_with("сокращение ссылки: ")) << error;
+    EXPECT_FALSE(error.contains("token")) << error;
 }
 
 TEST_F(BackgroundTest, DeleteExpiredKeepsFreshRows)

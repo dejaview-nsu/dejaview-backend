@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <string>
+#include <string_view>
 
 namespace
 {
@@ -289,6 +290,58 @@ TEST(SendErrorTest, CutsLongReply)
         "Weird server reply", kRepliesUntilMessage + "554 " + std::string(10'000, 'x') + "\r\n",
         "ivan@example.com");
     EXPECT_EQ(error, "Weird server reply: 554 " + std::string(508, 'x'));
+}
+
+constexpr std::string_view kClck = "https://clck.ru/--";
+
+TEST(ShortLinkTest, TrimsLineBreakAtEnd)
+{
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd", kClck), "https://clck.ru/3abcd");
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd\n", kClck), "https://clck.ru/3abcd");
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd\r\n", kClck), "https://clck.ru/3abcd");
+}
+
+// Ссылка - на тот же адрес, что и сокращатель: схема, хост и порт совпадают
+TEST(ShortLinkTest, AcceptsLinkOnShortenerOrigin)
+{
+    EXPECT_EQ(shortLink("http://127.0.0.1:8080/a", "http://127.0.0.1:8080/--"),
+              "http://127.0.0.1:8080/a");
+    EXPECT_EQ(shortLink("https://clck.ru/3abcd", "https://clck.ru"), "https://clck.ru/3abcd");
+}
+
+TEST(ShortLinkTest, LimitsLength)
+{
+    const std::string prefix = "https://clck.ru/";
+    const std::string longest = prefix + std::string(kMaxShortLinkLength - prefix.size(), 'a');
+    EXPECT_EQ(shortLink(longest, kClck), longest);
+    EXPECT_EQ(shortLink(longest + "\n", kClck), longest);
+    EXPECT_EQ(shortLink(longest + "a", kClck), std::nullopt);
+}
+
+// Ответ пришёл по сети и идёт в письмо: страница с капчей или ошибкой - не ссылка
+TEST(ShortLinkTest, RejectsNotALink)
+{
+    for (const char *reply : {"", "\r\n", "<html>captcha</html>", "clck.ru/3abcd",
+                              "ftp://clck.ru/3abcd", "https://clck.ru/a b", "https://clck.ru/a\rb",
+                              "https://clck.ru/\xD0\xB0", " https://clck.ru/3abcd"})
+    {
+        SCOPED_TRACE(reply);
+        EXPECT_EQ(shortLink(reply, kClck), std::nullopt);
+    }
+}
+
+// Ссылка с другого адреса в письме от нашего отправителя - фишинг, http - короткий код открытым
+// текстом
+TEST(ShortLinkTest, RejectsLinkOffShortenerOrigin)
+{
+    for (const char *reply :
+         {"https://evil.example/3abcd", "http://clck.ru/3abcd",
+          "https://clck.ru.evil.example/3abcd", "https://clck.ru@evil.example/3abcd",
+          "https://clck.ru:8443/3abcd", "https://clck.ru/", "https://clck.ru"})
+    {
+        SCOPED_TRACE(reply);
+        EXPECT_EQ(shortLink(reply, kClck), std::nullopt);
+    }
 }
 
 TEST(RetryDelayTest, DoublesUpToAnHour)

@@ -81,11 +81,20 @@ SmtpConfig readSmtp()
     {
         throw std::runtime_error("SMTP_FROM: ожидается адрес вида noreply@dejaview.ru");
     }
+    // По http полные ссылки с токенами ушли бы сокращателю открытым текстом
+    const std::string_view shortener = env("EMAIL_LINK_SHORTENER").value_or("");
+    if (!shortener.empty() && !shortener.starts_with("https://"))
+    {
+        throw std::runtime_error(
+            "EMAIL_LINK_SHORTENER: ожидается адрес https://, например "
+            "https://clck.ru/--");
+    }
     return SmtpConfig{
         .url = std::string(url),
         .from = std::string(from),
         .user = std::string(env("SMTP_USER").value_or("")),
         .password = std::string(env("SMTP_PASSWORD").value_or("")),
+        .linkShortener = shortener.empty() ? "" : readUrl("EMAIL_LINK_SHORTENER", shortener),
     };
 }
 
