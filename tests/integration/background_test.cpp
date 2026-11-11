@@ -232,6 +232,8 @@ TEST_F(BackgroundTest, ShortenerFailureIsRetriedWithoutSending)
     for (const auto &[status, reply, error] :
          {Case{drogon::k200OK, "<html>captcha</html>",
                "сокращение ссылки: в ответе не ссылка сокращателя"},
+          Case{drogon::k200OK, "https://evil.example/3abcd",
+               "сокращение ссылки: в ответе не ссылка сокращателя"},
           Case{drogon::k503ServiceUnavailable, "https://clck.ru/3abcd",
                "сокращение ссылки: ответ HTTP 503"}})
     {
