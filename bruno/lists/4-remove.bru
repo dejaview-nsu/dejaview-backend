@@ -1,0 +1,23 @@
+meta {
+  name: Убрать из списка
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/users/me/lists/want_to_watch/157336
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: dv_session={{session}}
+}
+
+assert {
+  res.status: eq 204
+}
+
+docs {
+  Фильма в списке нет - тоже 204.
+}

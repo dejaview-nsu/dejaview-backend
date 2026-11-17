@@ -1,0 +1,24 @@
+meta {
+  name: Добавить в список
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{baseUrl}}/api/v1/users/me/lists/want_to_watch/157336
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: dv_session={{session}}
+}
+
+assert {
+  res.status: eq 204
+}
+
+docs {
+  Сессия - из auth → «Вход». Фильм должен быть в movies: сначала movies → «Карточка фильма», иначе
+  404. list_type: want_to_watch или watched. Повтор - тоже 204, дубля нет.
+}
