@@ -9,7 +9,8 @@
 Регистрация, подтверждение email, повторная отправка письма, вход по паролю с CAPTCHA и
 блокировкой, текущая сессия, выход, вход и регистрация через Яндекс, Google и VK ID,
 восстановление пароля по ссылке из письма, смена пароля из профиля, карточка фильма: из каталога,
-а фильм не из каталога backend получает из TMDB; список отзывов о фильме (писать отзывы - Sprint 5).
+а фильм не из каталога backend получает из TMDB; список отзывов о фильме (писать отзывы - Sprint 5);
+списки «Хочу посмотреть» и «Просмотрено»: чекбоксы на странице фильма и списки в профиле.
 
 ## Как ходить в API
 
@@ -59,6 +60,8 @@
 | Вход | `POST /auth/login` | `captcha_required: true` или 403 `AUTH_CAPTCHA_REQUIRED` → виджет CAPTCHA, затем та же форма с `captcha_token`; 429 - блокировка, через сколько секунд - заголовок `Retry-After`; 403 `AUTH_EMAIL_NOT_CONFIRMED` → «Отправить новую ссылку» с тем же `login` |
 | Страница фильма | `GET /movies/{movie_id}`, гостю тоже | 200 - карточка `MovieCard`: пустые поля - `null` и `[]`, блок с ними не показывать; 404 `MOVIE_NOT_FOUND` - сообщение вместо карточки; 503 `MOVIE_UNAVAILABLE` - фильма нет в каталоге, а TMDB недоступен: сообщение из ответа, можно повторить позже |
 | Страница фильма, блок «Отзывы» | `GET /movies/{movie_id}/reviews?sort=...&page=...`, гостю тоже | 200 `{reviews, has_more}`: «+N» под отзывом - `likes - dislikes`, `username: null` - «Удаленный пользователь», `created_at` в UTC - показать в поясе пользователя. «Еще отзывы» - `page + 1` с той же `sort`, пока `has_more`. Вошедший пользователь своего отзыва в списке не увидит. 400 `INVALID_PARAMETER` - ошибка в `sort` или `page` |
+| Страница фильма, чекбоксы «Хочу посмотреть» и «Просмотрено» | `GET /users/me/movies/{movie_id}`, только если пользователь вошёл; отметить - `PUT /users/me/lists/{list_type}/{movie_id}`, снять - `DELETE` по тому же адресу, `list_type` - `want_to_watch` или `watched` | 200 `{want_to_watch, watched}`, гостю запрос не нужен: чекбоксы сняты. `PUT` и `DELETE` - 204, повтор ничего не меняет. 401 на `PUT` - окно входа, после входа повторить тот же `PUT`; 401 на `GET` состояния - показать чекбоксы гостя, окно входа не открывать |
+| Профиль, списки «Хочу посмотреть» и «Просмотрено» | `GET /users/me/lists/{list_type}?sort=...&q=...&page=...` | 200 `{movies, total}`: до 24 плиток, страниц - `ceil(total / 24)`, на другой странице те же `sort` и `q`. `total: 0` без `q` - «Список пуст». `average_rating: null` - оценок нет, `user_rating: null` - кнопка «Оценить». «Удалить» - `DELETE /users/me/lists/{list_type}/{movie_id}` и запросить страницу заново. 400 `INVALID_PARAMETER` - ошибка в `sort` или `page` |
 | `/auth/oidc?provider=...&result=...` - возврат от провайдера | по `result` | `success` - вошёл; `registration_required` → `GET /auth/oidc/pending` → форма с `suggested_username` и годом рождения → `POST /auth/oidc/complete`; `link_required` → `pending` даёт `email` → обычный вход с паролем, провайдер привяжется сам; `account_blocked`, `error` - сообщение. 410 `AUTH_OIDC_EXPIRED` - 30 минут прошли, войти заново |
 
 ## CAPTCHA
@@ -126,6 +129,7 @@ backend выключена: `captcha_required` всегда `false`, работ�
 | Сессия истекла | `DELETE FROM sessions;` |
 | Карточка фильма | в локальной БД каталога нет - фильм вставить, ниже |
 | Отзывы о фильме | писать отзывы можно будет в Sprint 5 - пока вставить, ниже |
+| Списки на несколько страниц | вставить, ниже |
 
 **Страницы OIDC без провайдера.** Незавершённый вход, каким его оставляет возврат от провайдера:
 
@@ -178,6 +182,21 @@ SELECT (SELECT min(review_id) FROM reviews), user_id, 1 FROM users LIMIT 3;
 ```
 
 Отзывы - `GET /api/v1/movies/157336/reviews?sort=newest&page=2`.
+
+**Списки.** 30 фильмов в «Просмотрено» первого пользователя из БД, у первого фильма - две оценки:
+
+```sql
+INSERT INTO movies (movie_id, title, original_title)
+SELECT 990000 + g, 'Фильм ' || g, 'Movie ' || g FROM generate_series(1, 30) AS g
+ON CONFLICT DO NOTHING;
+INSERT INTO user_movie_lists (user_id, list_type, movie_id, added_at)
+SELECT (SELECT min(user_id) FROM users), 'watched', 990000 + g, now() - g * interval '1 minute'
+FROM generate_series(1, 30) AS g
+ON CONFLICT DO NOTHING;
+INSERT INTO ratings (movie_id, score) VALUES (990001, 9), (990001, 8);
+```
+
+Вторая страница - `GET /api/v1/users/me/lists/watched?page=2` с сессией этого пользователя.
 
 ## Примеры запросов
 

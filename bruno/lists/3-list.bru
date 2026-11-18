@@ -1,0 +1,31 @@
+meta {
+  name: Список в профиле
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/users/me/lists/want_to_watch?sort=newest&page=1
+  body: none
+  auth: none
+}
+
+params:query {
+  sort: newest
+  page: 1
+}
+
+headers {
+  Cookie: dv_session={{session}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.total: isNumber
+  res.body.movies: isArray
+}
+
+docs {
+  sort: newest (по умолчанию), oldest, title_asc, title_desc, best, worst; q - часть названия
+  без учета регистра; page с 1, по 24 фильма. Страниц - ceil(total / 24).
+}

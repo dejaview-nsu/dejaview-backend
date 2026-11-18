@@ -1,0 +1,25 @@
+meta {
+  name: Фильм в списках
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/users/me/movies/157336
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: dv_session={{session}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.want_to_watch: eq true
+  res.body.watched: isBoolean
+}
+
+docs {
+  Чекбоксы «Хочу посмотреть» и «Просмотрено» на странице фильма.
+}
