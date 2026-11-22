@@ -186,8 +186,7 @@ Task<bool> isHealthy(std::string url, std::string requestId, double timeoutSecon
     }
 }
 
-// POST в ML и учёт результата в выключателе: сервис ответил - серия аварий сброшена, нет
-// соединения, тайм-аут или 5xx - авария
+// Ответ об ограничении нагрузки прерывает серию аварий, как успешный ответ.
 Task<SearchResult> postSearch(std::shared_ptr<MlService> ml, MediaKind kind, std::string mime,
                               std::string content, std::string requestId, double timeoutSeconds)
 {

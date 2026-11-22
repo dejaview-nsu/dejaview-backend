@@ -510,6 +510,24 @@ TEST_F(MlClientTest, ReplyResetsOutageStreak)
     expectFound(image(ml));
 }
 
+TEST_F(MlClientTest, OverloadRepliesKeepBreakerClosedAndResetOutageStreak)
+{
+    config.failuresToOpen = 2;
+    config.openFor = 1h;
+    const auto ml = service();
+    replyImage(k500InternalServerError, "{}");
+    expectError(image(ml), SearchError::Unavailable);
+
+    replyImage(k503ServiceUnavailable, R"({"code":"SERVER_BUSY"})");
+    expectError(image(ml), SearchError::Busy);
+    expectError(image(ml), SearchError::Busy);
+
+    replyImage(k500InternalServerError, "{}");
+    expectError(image(ml), SearchError::Unavailable);
+    replyImage(k200OK, kFoundBody);
+    expectFound(image(ml));
+}
+
 TEST_F(MlClientTest, ProbesHealthAfterBreakerOpenPeriod)
 {
     config.failuresToOpen = 1;
