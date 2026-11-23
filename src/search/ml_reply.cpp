@@ -8,6 +8,7 @@ namespace
 constexpr int kStatusOk = 200;
 constexpr int kFirstClientError = 400;
 constexpr int kFirstServerError = 500;
+constexpr int kStatusServiceUnavailable = 503;
 constexpr int kEndOfServerErrors = 600;
 
 // Любое отклонение от контракта ответа 200 - не авария: сервис ответил
@@ -72,6 +73,14 @@ std::expected<std::vector<std::int64_t>, MlFailure> parseMlReply(MediaKind kind,
     if (status >= kFirstClientError && status < kFirstServerError)
     {
         return std::unexpected(MlFailure{forKind(kind, clientError(body)), false});
+    }
+    if (status == kStatusServiceUnavailable && body != nullptr && body->isObject())
+    {
+        const Json::Value &code = (*body)["code"];
+        if (code.isString() && code.asString() == "SERVER_BUSY")
+        {
+            return std::unexpected(MlFailure{SearchError::Busy, false});
+        }
     }
     const bool outage = status >= kFirstServerError && status < kEndOfServerErrors;
     return std::unexpected(MlFailure{SearchError::Unavailable, outage});

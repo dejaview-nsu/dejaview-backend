@@ -196,6 +196,16 @@ TEST(ParseMlReplyTest, ServerErrorIgnoresClientErrorCodeInBody)
                   SearchError::Unavailable, true);
 }
 
+TEST(ParseMlReplyTest, MapsOnlyContractedOverloadToBusy)
+{
+    expectFailure(parse(MediaKind::Text, 503, R"({"code":"SERVER_BUSY"})"), SearchError::Busy,
+                  false);
+    expectFailure(parse(MediaKind::Text, 500, R"({"code":"SERVER_BUSY"})"),
+                  SearchError::Unavailable, true);
+    expectFailure(parse(MediaKind::Text, 503, R"({"code":7})"), SearchError::Unavailable, true);
+    expectFailure(parseMlReply(MediaKind::Text, 503, nullptr), SearchError::Unavailable, true);
+}
+
 TEST(ParseMlReplyTest, OutageBoundaries)
 {
     expectFailure(parseMlReply(MediaKind::Image, 399, nullptr), SearchError::Unavailable, false);
