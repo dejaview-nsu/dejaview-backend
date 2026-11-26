@@ -47,6 +47,7 @@ add_library(dejaview-core STATIC
     src/movies/tmdb_client.cpp
     src/movies/tmdb_movie.cpp
     src/profile.cpp
+    src/ratings.cpp
     src/reviews.cpp
     src/auth/captcha.cpp
     src/auth/crypto.cpp
@@ -117,6 +118,7 @@ add_executable(dejaview-tests
     tests/integration/login_test.cpp
     tests/integration/ml_client_test.cpp
     tests/integration/movies_test.cpp
+    tests/integration/ratings_test.cpp
     tests/integration/oidc_test.cpp
     tests/integration/password_test.cpp
     tests/integration/profile_test.cpp
