@@ -39,8 +39,12 @@ Task<std::optional<std::string>> selectCard(orm::DbClientPtr db, std::int64_t mo
         "'actors', (SELECT coalesce(json_agg(json_build_object('person_id', a -> 'person_id', "
         "'name', a -> 'name', 'character', a -> 'character', "
         "'photo_url', $3 || (a ->> 'profile_path')) ORDER BY n), '[]') "
-        "FROM jsonb_array_elements(actors) WITH ORDINALITY AS list(a, n)))::text "
-        "AS card FROM movies WHERE movie_id = $1",
+        "FROM jsonb_array_elements(actors) WITH ORDINALITY AS list(a, n)), "
+        "'average_rating', stats.average_rating, 'ratings_count', stats.ratings_count)::text "
+        "AS card FROM movies m "
+        "CROSS JOIN LATERAL (SELECT round(avg(score), 1) AS average_rating, "
+        "count(*) AS ratings_count FROM ratings WHERE movie_id = m.movie_id) stats "
+        "WHERE m.movie_id = $1",
         movieId, std::string(kPosterBaseUrl), std::string(kPhotoBaseUrl));
     if (found.empty())
     {
