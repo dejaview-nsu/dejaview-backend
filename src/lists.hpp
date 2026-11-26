@@ -9,8 +9,8 @@
 #include <string>
 #include <string_view>
 
-// Списки «Хочу посмотреть» и «Просмотрено» (#17026, #17027, #17030 п. 2.2, 2.4; тег Lists в
-// api/openapi.yaml). Только для пользователя: владелец списка - из сессии.
+// Списки профиля «Хочу посмотреть», «Просмотрено» и «Мои оценки» (#17030 п. 2.2–2.4).
+// Владелец списка определяется по сессии.
 
 enum class ListSort
 {
@@ -42,6 +42,10 @@ drogon::Task<drogon::HttpResponsePtr> listMoviesHandler(drogon::orm::DbClientPtr
                                                         drogon::HttpRequestPtr req,
                                                         std::string listType);
 
+// GET /users/me/ratings: {movies, total}, только фильмы с оценкой пользователя.
+drogon::Task<drogon::HttpResponsePtr> listRatingsHandler(drogon::orm::DbClientPtr db,
+                                                         drogon::HttpRequestPtr req);
+
 // PUT /users/me/lists/{list_type}/{movie_id}: 204 и при повторе, фильма нет в movies - 404.
 drogon::Task<drogon::HttpResponsePtr> addToListHandler(drogon::orm::DbClientPtr db,
                                                        drogon::HttpRequestPtr req,
@@ -53,7 +57,7 @@ drogon::Task<drogon::HttpResponsePtr> removeFromListHandler(drogon::orm::DbClien
                                                             std::string listType,
                                                             std::string movieId);
 
-// GET /users/me/movies/{movie_id}: {want_to_watch, watched} для чекбоксов на странице фильма.
+// GET /users/me/movies/{movie_id}: состояние списков и оценка пользователя на странице фильма.
 drogon::Task<drogon::HttpResponsePtr> movieListsStateHandler(drogon::orm::DbClientPtr db,
                                                              drogon::HttpRequestPtr req,
                                                              std::string movieId);
