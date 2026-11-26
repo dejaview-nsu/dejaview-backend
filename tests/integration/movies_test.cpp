@@ -48,7 +48,8 @@ const std::string kInterstellarCard = R"({
     "genres": [{"id": 878, "name": "фантастика"}], "countries": [{"code": "US", "name": "США"}],
     "crew": [{"person_id": 525, "name": "Кристофер Нолан", "role": "director"}],
     "actors": [{"person_id": 3895, "name": "Майкл Кейн", "character": "профессор Брэнд",
-                "photo_url": "https://image.tmdb.org/t/p/w185/profile-3895.jpg"}]
+                "photo_url": "https://image.tmdb.org/t/p/w185/profile-3895.jpg"}],
+    "average_rating": null, "ratings_count": 0
 })";
 
 // Интерстеллар под другим movie_id: для фильмов, которых нет в кеше
@@ -122,7 +123,8 @@ TEST_F(MovieCardTest, FullCardMatchesMoviesRow)
         "actors": [{"person_id": 3895, "name": "Майкл Кейн", "character": "профессор Брэнд",
                     "photo_url": "https://image.tmdb.org/t/p/w185/profile-3895.jpg"},
                    {"person_id": 10297, "name": "Мэттью Макконахи", "character": null,
-                    "photo_url": null}]
+                    "photo_url": null}],
+        "average_rating": null, "ratings_count": 0
     })"));
 }
 
@@ -137,8 +139,29 @@ TEST_F(MovieCardTest, EmptyFieldsAreNullAndEmptyLists)
     EXPECT_EQ(body(response), parse(R"({
         "movie_id": 1000001, "title": "Фильм без данных", "original_title": "Film Without Data",
         "year": null, "age_rating": null, "poster_url": null, "runtime_min": null,
-        "overview": null, "genres": [], "countries": [], "crew": [], "actors": []
+        "overview": null, "genres": [], "countries": [], "crew": [], "actors": [],
+        "average_rating": null, "ratings_count": 0
     })"));
+}
+
+TEST_F(MovieCardTest, PublicAverageIncludesPreservedRatingsAndRoundsToOneDecimal)
+{
+    const auto ivan = createUser("ivan", "ivan@example.com");
+    const auto petr = createUser("petr", "petr@example.com");
+    db->execSqlSync(
+        "INSERT INTO movies (movie_id, title, original_title) "
+        "VALUES (157336, 'Интерстеллар', 'Interstellar'), (603, 'Матрица', 'The Matrix')");
+    db->execSqlSync(
+        "INSERT INTO ratings (user_id, movie_id, score) VALUES "
+        "($1, 157336, 8), ($2, 157336, 9), (NULL, 157336, 9), ($1, 603, 1)",
+        ivan, petr);
+
+    const auto response = card("157336");
+    ASSERT_EQ(response->statusCode(), k200OK);
+    const auto json = body(response);
+    EXPECT_DOUBLE_EQ(json["average_rating"].asDouble(), 8.7);
+    EXPECT_EQ(json["ratings_count"].asInt64(), 3);
+    EXPECT_FALSE(json.isMember("user_rating"));
 }
 
 // 603 нет ни в movies, ни в фейковом TMDB: он отвечает 404 на всё, что не задано
