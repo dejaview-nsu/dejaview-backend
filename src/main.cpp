@@ -172,6 +172,15 @@ int main()
         .registerHandler("/api/v1/movies/{movie_id}/reviews",
                          [db](HttpRequestPtr req, std::string movieId)
                          { return movieReviewsHandler(db, req, std::move(movieId)); }, {Get})
+        .registerHandler("/api/v1/movies/{movie_id}/reviews",
+                         [db](HttpRequestPtr req, std::string movieId)
+                         { return createMovieReviewHandler(db, req, std::move(movieId)); }, {Post})
+        .registerHandler("/api/v1/reviews/{review_id}",
+                         [db](HttpRequestPtr req, std::string reviewId)
+                         { return updateReviewHandler(db, req, std::move(reviewId)); }, {Patch})
+        .registerHandler("/api/v1/reviews/{review_id}",
+                         [db](HttpRequestPtr req, std::string reviewId)
+                         { return deleteReviewHandler(db, req, std::move(reviewId)); }, {Delete})
         .registerHandler("/api/v1/users/me/ratings",
                          [db](HttpRequestPtr req) { return listRatingsHandler(db, req); }, {Get})
         .registerHandler("/api/v1/users/me/lists/{list_type}",

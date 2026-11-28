@@ -9,8 +9,7 @@
 #include <string>
 #include <string_view>
 
-// Отзывы о фильме (#17239, тег Reviews в api/openapi.yaml). Пока только список (#18845):
-// написание, редактирование и реакции - Sprint 5 (#17029).
+// Отзывы о фильме (#17029, #17239, тег Reviews в api/openapi.yaml).
 
 enum class ReviewsSort
 {
@@ -36,3 +35,15 @@ std::expected<ReviewsQuery, std::string_view> parseReviewsQuery(std::string_view
 drogon::Task<drogon::HttpResponsePtr> movieReviewsHandler(drogon::orm::DbClientPtr db,
                                                           drogon::HttpRequestPtr req,
                                                           std::string movieId);
+
+drogon::Task<drogon::HttpResponsePtr> createMovieReviewHandler(drogon::orm::DbClientPtr db,
+                                                               drogon::HttpRequestPtr req,
+                                                               std::string movieId);
+
+drogon::Task<drogon::HttpResponsePtr> updateReviewHandler(drogon::orm::DbClientPtr db,
+                                                          drogon::HttpRequestPtr req,
+                                                          std::string reviewId);
+
+drogon::Task<drogon::HttpResponsePtr> deleteReviewHandler(drogon::orm::DbClientPtr db,
+                                                          drogon::HttpRequestPtr req,
+                                                          std::string reviewId);
