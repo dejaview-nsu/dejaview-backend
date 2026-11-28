@@ -20,7 +20,7 @@ using namespace drogon;
 
 namespace
 {
-constexpr std::int64_t kPageSize = 10;
+constexpr std::int64_t kMovieReviewsPageSize = 10;
 
 constexpr char kReviewColumns[] =
     "r.review_id, u.username, "
@@ -220,26 +220,47 @@ Task<HttpResponsePtr> movieReviewsHandler(orm::DbClientPtr db, HttpRequestPtr re
     }
     const auto user = co_await currentUser(db, req);
 
-    // Реакции считаются для каждого отзыва фильма по первичному ключу review_reactions. Строка
-    // сверх страницы - признак has_more. Удалённый автор (user_id NULL) виден всем
-    const auto rows = co_await db->execSqlCoro(
-        std::string("SELECT ") + kReviewColumns +
-            "FROM reviews r LEFT JOIN users u ON u.user_id = r.user_id " + kReactionCounts +
-            "WHERE r.movie_id = $1 AND ($2::bigint IS NULL OR r.user_id IS DISTINCT FROM $2) "
-            "ORDER BY " +
-            std::string(orderBy(query->sort)) + " LIMIT $3 OFFSET $4",
-        *id, user ? std::optional(user->userId) : std::nullopt, kPageSize + 1,
-        (query->page - 1) * kPageSize);
+    const bool includeOwn = user && query->page == 1;
+    const std::int64_t offset = (query->page - 1) * kMovieReviewsPageSize;
+    // На первой странице свой отзыв берётся в том же снимке БД. Строка для него и строка
+    // для has_more идут сверх лимита массива других отзывов.
+    const auto rows =
+        co_await db->execSqlCoro(std::string("SELECT ") + kReviewColumns +
+                                     ", coalesce(r.user_id = $2::bigint, false) AS is_own "
+                                     "FROM reviews r LEFT JOIN users u ON u.user_id = r.user_id " +
+                                     kReactionCounts +
+                                     "WHERE r.movie_id = $1 AND ($5::boolean OR $2 IS NULL OR "
+                                     "r.user_id IS DISTINCT FROM $2) "
+                                     "ORDER BY " +
+                                     (includeOwn ? "is_own DESC, " : "") +
+                                     std::string(orderBy(query->sort)) + " LIMIT $3 OFFSET $4",
+                                 *id, user ? std::optional(user->userId) : std::nullopt,
+                                 kMovieReviewsPageSize + 1 + includeOwn, offset, includeOwn);
 
-    Json::Value reviews(Json::arrayValue);
-    for (std::size_t i = 0; i < std::min<std::size_t>(rows.size(), kPageSize); ++i)
-    {
-        reviews.append(reviewJson(rows[i]));
-    }
     Json::Value body;
+    Json::Value reviews(Json::arrayValue);
+    bool hasMore = false;
+    for (const auto &row : rows)
+    {
+        if (row["is_own"].as<bool>())
+        {
+            body["own_review"] = reviewJson(row);
+        }
+        else if (reviews.size() == kMovieReviewsPageSize)
+        {
+            hasMore = true;
+            break;
+        }
+        else
+        {
+            reviews.append(reviewJson(row));
+        }
+    }
     body["reviews"] = std::move(reviews);
-    body["has_more"] = rows.size() > static_cast<std::size_t>(kPageSize);
-    co_return HttpResponse::newHttpJsonResponse(body);
+    body["has_more"] = hasMore;
+    auto response = HttpResponse::newHttpJsonResponse(body);
+    response->addHeader("cache-control", "no-store");
+    co_return response;
 }
 
 Task<HttpResponsePtr> createMovieReviewHandler(orm::DbClientPtr db, HttpRequestPtr req,

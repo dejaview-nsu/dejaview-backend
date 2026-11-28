@@ -30,8 +30,8 @@ struct ReviewsQuery
 std::expected<ReviewsQuery, std::string_view> parseReviewsQuery(std::string_view sort,
                                                                 std::string_view page);
 
-// GET /movies/{movie_id}/reviews: страница до 10 отзывов и has_more, гостю тоже. С действующей
-// сессией свой отзыв в список не входит: он показывается отдельно (#17029 п. 3).
+// GET /movies/{movie_id}/reviews: до 10 отзывов и has_more, гостю тоже. Свой отзыв возвращается
+// отдельно в own_review только на первой странице (#17029 п. 3).
 drogon::Task<drogon::HttpResponsePtr> movieReviewsHandler(drogon::orm::DbClientPtr db,
                                                           drogon::HttpRequestPtr req,
                                                           std::string movieId);

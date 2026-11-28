@@ -447,3 +447,69 @@ TEST_F(ReviewWritesTest, DeleteRemovesReviewAndAllowsNewPublication)
               "review_delete");
     EXPECT_EQ(post(reviewInput())->statusCode(), k201Created);
 }
+
+TEST_F(ReviewWritesTest, OwnReviewIsReturnedOnlyOnFirstPage)
+{
+    const auto own =
+        addReview(std::stoll(scalar("SELECT user_id FROM users WHERE username = 'author'")), 50);
+    const auto other =
+        addReview(std::stoll(scalar("SELECT user_id FROM users WHERE username = 'other'")), 20);
+    db->execSqlSync(
+        "INSERT INTO reviews (movie_id, verdict, body, created_at) "
+        "SELECT 157336, 'neutral', repeat('б', 300), now() - g * interval '1 minute' "
+        "FROM generate_series(1, 10) AS g");
+    for (const char *sort : {"best", "worst", "newest", "oldest"})
+    {
+        const auto first = reviews("157336", sort, "1", kAuthor);
+        ASSERT_EQ(first->statusCode(), k200OK);
+        const auto firstJson = body(first);
+        EXPECT_EQ(first->getHeader("cache-control"), "no-store");
+        ASSERT_TRUE(firstJson.isMember("own_review"));
+        EXPECT_EQ(firstJson["own_review"]["review_id"].asInt64(), own);
+        EXPECT_EQ(firstJson["own_review"]["username"].asString(), "author");
+        EXPECT_EQ(firstJson["reviews"].size(), 10U);
+        EXPECT_TRUE(firstJson["has_more"].asBool());
+        const auto secondJson = body(reviews("157336", sort, "2", kAuthor));
+        EXPECT_FALSE(secondJson.isMember("own_review"));
+        EXPECT_EQ(secondJson["reviews"].size(), 1U);
+        EXPECT_FALSE(secondJson["has_more"].asBool());
+        std::set<std::int64_t> otherIds;
+        for (const auto *page : {&firstJson, &secondJson})
+        {
+            for (const auto &review : (*page)["reviews"])
+            {
+                otherIds.insert(review["review_id"].asInt64());
+            }
+        }
+        EXPECT_EQ(otherIds.size(), 11U);
+        EXPECT_EQ(otherIds.count(own), 0U);
+        EXPECT_EQ(otherIds.count(other), 1U);
+    }
+}
+
+TEST_F(ReviewWritesTest, MovieReviewsHandleGuestStaleSessionAndAbsentOwnReview)
+{
+    const auto other =
+        addReview(std::stoll(scalar("SELECT user_id FROM users WHERE username = 'other'")), 20);
+    for (const auto &cookies : {Cookies{}, Cookies{{"dv_session", "stale"}}, kAuthor})
+    {
+        const auto response = reviews("157336", "newest", "1", cookies);
+        ASSERT_EQ(response->statusCode(), k200OK);
+        EXPECT_EQ(response->getHeader("cache-control"), "no-store");
+        const auto json = body(response);
+        EXPECT_FALSE(json.isMember("own_review"));
+        ASSERT_EQ(json["reviews"].size(), 1U);
+        EXPECT_EQ(json["reviews"][0]["review_id"].asInt64(), other);
+        EXPECT_FALSE(json["has_more"].asBool());
+    }
+}
+
+TEST_F(ReviewWritesTest, OwnReviewDoesNotCountTowardsHasMore)
+{
+    const auto own =
+        addReview(std::stoll(scalar("SELECT user_id FROM users WHERE username = 'author'")), 20);
+    const auto json = body(reviews("157336", "best", "1", kAuthor));
+    EXPECT_EQ(json["own_review"]["review_id"].asInt64(), own);
+    EXPECT_EQ(json["reviews"], Json::Value(Json::arrayValue));
+    EXPECT_FALSE(json["has_more"].asBool());
+}
