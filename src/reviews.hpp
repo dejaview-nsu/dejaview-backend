@@ -9,8 +9,7 @@
 #include <string>
 #include <string_view>
 
-// Отзывы о фильме (#17239, тег Reviews в api/openapi.yaml). Пока только список (#18845):
-// написание, редактирование и реакции - Sprint 5 (#17029).
+// Отзывы о фильме (#17029, #17239, тег Reviews в api/openapi.yaml).
 
 enum class ReviewsSort
 {
@@ -31,8 +30,24 @@ struct ReviewsQuery
 std::expected<ReviewsQuery, std::string_view> parseReviewsQuery(std::string_view sort,
                                                                 std::string_view page);
 
-// GET /movies/{movie_id}/reviews: страница до 10 отзывов и has_more, гостю тоже. С действующей
-// сессией свой отзыв в список не входит: он показывается отдельно (#17029 п. 3).
+// GET /movies/{movie_id}/reviews: до 10 отзывов и has_more, гостю тоже. Свой отзыв возвращается
+// отдельно в own_review только на первой странице (#17029 п. 3).
 drogon::Task<drogon::HttpResponsePtr> movieReviewsHandler(drogon::orm::DbClientPtr db,
                                                           drogon::HttpRequestPtr req,
                                                           std::string movieId);
+
+// GET /users/me/reviews: по 24 отзыва владельца сессии с данными фильмов и общим числом совпадений.
+drogon::Task<drogon::HttpResponsePtr> myReviewsHandler(drogon::orm::DbClientPtr db,
+                                                       drogon::HttpRequestPtr req);
+
+drogon::Task<drogon::HttpResponsePtr> createMovieReviewHandler(drogon::orm::DbClientPtr db,
+                                                               drogon::HttpRequestPtr req,
+                                                               std::string movieId);
+
+drogon::Task<drogon::HttpResponsePtr> updateReviewHandler(drogon::orm::DbClientPtr db,
+                                                          drogon::HttpRequestPtr req,
+                                                          std::string reviewId);
+
+drogon::Task<drogon::HttpResponsePtr> deleteReviewHandler(drogon::orm::DbClientPtr db,
+                                                          drogon::HttpRequestPtr req,
+                                                          std::string reviewId);
