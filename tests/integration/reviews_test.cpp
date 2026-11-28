@@ -230,3 +230,220 @@ TEST_F(ReviewsTest, InvalidMovieIdOrParameters)
         EXPECT_EQ(body(response)["field"].asString(), field);
     }
 }
+
+namespace
+{
+using Cookies = std::map<std::string, std::string>;
+const Cookies kAuthor{{"dv_session", "author-session"}};
+const Cookies kOther{{"dv_session", "other-session"}};
+
+std::string unicodeText(int length)
+{
+    std::string text;
+    for (int i = 0; i < length; ++i)
+    {
+        text += "🎬";
+    }
+    return text;
+}
+
+Json::Value reviewInput(int textLength = 300)
+{
+    Json::Value json;
+    json["verdict"] = "positive";
+    json["body"] = unicodeText(textLength);
+    return json;
+}
+}  // namespace
+
+class ReviewWritesTest : public ReviewsTest
+{
+  protected:
+    void SetUp() override
+    {
+        ReviewsTest::SetUp();
+        if (IsSkipped())
+        {
+            return;
+        }
+        for (const auto &[name, cookie] :
+             {std::pair{"author", "author-session"}, std::pair{"other", "other-session"}})
+        {
+            const auto id = createUser(name, std::string(name) + "@example.com");
+            db->execSqlSync(
+                "INSERT INTO sessions (token_hash, user_id, expires_at) "
+                "VALUES (sha256($1::text::bytea), $2, now() + interval '1 hour')",
+                std::string(cookie), id);
+        }
+    }
+
+    HttpResponsePtr post(const Json::Value &json, const Cookies &cookies = kAuthor,
+                         const std::string &movieId = "157336")
+    {
+        return run(createMovieReviewHandler(
+            db, request(Post, "/api/v1/movies/" + movieId + "/reviews", json, cookies), movieId));
+    }
+
+    HttpResponsePtr edit(const std::string &id, const Json::Value &json,
+                         const Cookies &cookies = kAuthor)
+    {
+        return run(
+            updateReviewHandler(db, request(Patch, "/api/v1/reviews/" + id, json, cookies), id));
+    }
+
+    HttpResponsePtr remove(const std::string &id, const Cookies &cookies = kAuthor)
+    {
+        return run(
+            deleteReviewHandler(db, request(Delete, "/api/v1/reviews/" + id, {}, cookies), id));
+    }
+};
+
+TEST_F(ReviewWritesTest, AcceptsUnicodeBoundsAndOptionalTitle)
+{
+    auto json = reviewInput(10000);
+    json["title"] = unicodeText(150);
+    const auto response = post(json);
+    ASSERT_EQ(response->statusCode(), k201Created);
+    const auto review = body(response);
+    EXPECT_GT(review["review_id"].asInt64(), 0);
+    EXPECT_EQ(review["username"].asString(), "author");
+    EXPECT_FALSE(review["created_at"].asString().empty());
+    EXPECT_FALSE(review["is_edited"].asBool());
+    EXPECT_EQ(review["verdict"], json["verdict"]);
+    EXPECT_EQ(review["title"], json["title"]);
+    EXPECT_EQ(review["body"], json["body"]);
+    EXPECT_EQ(review["likes"].asInt64(), 0);
+    EXPECT_EQ(review["dislikes"].asInt64(), 0);
+
+    json = reviewInput(300);
+    json["title"] = "";
+    const auto other = post(json, kOther);
+    ASSERT_EQ(other->statusCode(), k201Created);
+    EXPECT_TRUE(body(other)["title"].isNull());
+}
+
+TEST_F(ReviewWritesTest, RejectsInvalidReviewFields)
+{
+    for (const int length : {0, 299, 10001})
+    {
+        const auto response = post(reviewInput(length));
+        EXPECT_EQ(response->statusCode(), k400BadRequest) << length;
+        EXPECT_EQ(body(response)["code"].asString(), "VALIDATION_ERROR");
+        EXPECT_EQ(body(response)["field"].asString(), "body");
+    }
+    for (const auto &[field, value] : {std::pair{"title", Json::Value(unicodeText(151))},
+                                       {"title", Json::Value(4)},
+                                       {"body", Json::Value()},
+                                       {"verdict", Json::Value("unknown")}})
+    {
+        auto json = reviewInput();
+        json[field] = value;
+        const auto response = post(json);
+        EXPECT_EQ(response->statusCode(), k400BadRequest) << field;
+        EXPECT_EQ(body(response)["field"].asString(), field);
+    }
+    auto json = reviewInput();
+    json.removeMember("verdict");
+    EXPECT_EQ(body(post(json))["field"].asString(), "verdict");
+    json = reviewInput();
+    json["body"] = unicodeText(300) + std::string(1, '\0');
+    EXPECT_EQ(body(post(json))["field"].asString(), "body");
+    const auto malformed = post(Json::Value(Json::arrayValue));
+    EXPECT_EQ(malformed->statusCode(), k400BadRequest);
+    EXPECT_TRUE(body(malformed)["field"].isNull());
+    EXPECT_EQ(scalar("SELECT count(*) FROM reviews"), "0");
+    EXPECT_EQ(scalar("SELECT count(*) FROM user_actions"), "0");
+}
+
+TEST_F(ReviewWritesTest, RejectsSecondReviewAndWritesOneAction)
+{
+    ASSERT_EQ(post(reviewInput())->statusCode(), k201Created);
+    const auto duplicate = post(reviewInput());
+    EXPECT_EQ(duplicate->statusCode(), k409Conflict);
+    EXPECT_EQ(body(duplicate)["code"].asString(), "REVIEW_ALREADY_EXISTS");
+    EXPECT_EQ(scalar("SELECT count(*) FROM reviews"), "1");
+    EXPECT_EQ(scalar("SELECT action FROM user_actions"), "review_create");
+}
+
+TEST_F(ReviewWritesTest, RequiresSessionAndKnownIds)
+{
+    for (const auto &response :
+         {post({}, {}, "invalid"), edit("invalid", {}, {}), remove("invalid", {})})
+    {
+        EXPECT_EQ(response->statusCode(), k401Unauthorized);
+        EXPECT_EQ(body(response)["code"].asString(), "SESSION_REQUIRED");
+    }
+    const auto expired = post(reviewInput(), {{"dv_session", "stale"}});
+    EXPECT_EQ(expired->statusCode(), k401Unauthorized);
+    EXPECT_EQ(body(expired)["code"].asString(), "SESSION_EXPIRED");
+    for (const auto &response :
+         {post(reviewInput(), kAuthor, "999"), post(reviewInput(), kAuthor, "invalid")})
+    {
+        EXPECT_EQ(response->statusCode(), k404NotFound);
+        EXPECT_EQ(body(response)["code"].asString(), "MOVIE_NOT_FOUND");
+    }
+    for (const auto &response : {edit("999", reviewInput()), remove("999"), remove("invalid")})
+    {
+        EXPECT_EQ(response->statusCode(), k404NotFound);
+        EXPECT_EQ(body(response)["code"].asString(), "REVIEW_NOT_FOUND");
+    }
+}
+
+TEST_F(ReviewWritesTest, EditPreservesPublicationDateAndUntouchedFields)
+{
+    auto json = reviewInput();
+    json["title"] = "Название";
+    const auto response = post(json);
+    ASSERT_EQ(response->statusCode(), k201Created);
+    const auto created = body(response);
+    const auto id = created["review_id"].asString();
+    EXPECT_EQ(edit(id, Json::Value(Json::objectValue))->statusCode(), k400BadRequest);
+    Json::Value change;
+    change["body"] = unicodeText(299);
+    EXPECT_EQ(body(edit(id, change))["field"].asString(), "body");
+    change = Json::Value(Json::objectValue);
+    change["title"] = Json::Value();
+    change["verdict"] = "negative";
+    const auto updated = edit(id, change);
+    ASSERT_EQ(updated->statusCode(), k200OK);
+    const auto review = body(updated);
+    EXPECT_EQ(review["created_at"], created["created_at"]);
+    EXPECT_EQ(review["body"], created["body"]);
+    EXPECT_TRUE(review["is_edited"].asBool());
+    EXPECT_TRUE(review["title"].isNull());
+    EXPECT_EQ(review["verdict"].asString(), "negative");
+    EXPECT_EQ(scalar("SELECT action FROM user_actions WHERE action = 'review_edit'"),
+              "review_edit");
+}
+
+TEST_F(ReviewWritesTest, ForeignAndDeletedAuthorReviewsCannotBeChanged)
+{
+    const auto created = post(reviewInput());
+    ASSERT_EQ(created->statusCode(), k201Created);
+    const auto id = body(created)["review_id"].asString();
+    const auto deletedAuthorId = std::to_string(addReview(kDeletedAuthor, 5));
+    for (const auto &response :
+         {edit(id, reviewInput(), kOther), remove(id, kOther),
+          edit(deletedAuthorId, reviewInput(), kOther), remove(deletedAuthorId, kOther)})
+    {
+        EXPECT_EQ(response->statusCode(), k403Forbidden);
+        EXPECT_EQ(body(response)["code"].asString(), "REVIEW_NOT_OWNER");
+    }
+    EXPECT_EQ(scalar("SELECT count(*) FROM reviews WHERE NOT is_edited"), "2");
+    EXPECT_EQ(scalar("SELECT count(*) FROM user_actions"), "1");
+}
+
+TEST_F(ReviewWritesTest, DeleteRemovesReviewAndAllowsNewPublication)
+{
+    const auto created = post(reviewInput());
+    ASSERT_EQ(created->statusCode(), k201Created);
+    const auto id = body(created)["review_id"].asString();
+    const auto deleted = remove(id);
+    ASSERT_EQ(deleted->statusCode(), k204NoContent);
+    EXPECT_TRUE(deleted->body().empty());
+    EXPECT_EQ(remove(id)->statusCode(), k404NotFound);
+    EXPECT_EQ(scalar("SELECT count(*) FROM reviews"), "0");
+    EXPECT_EQ(scalar("SELECT action FROM user_actions WHERE action = 'review_delete'"),
+              "review_delete");
+    EXPECT_EQ(post(reviewInput())->statusCode(), k201Created);
+}
