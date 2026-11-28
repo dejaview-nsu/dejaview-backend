@@ -1,5 +1,6 @@
 #include "reviews.hpp"
 #include "integration/db_test.hpp"
+#include "profile.hpp"
 
 #include <cstdint>
 #include <map>
@@ -512,4 +513,187 @@ TEST_F(ReviewWritesTest, OwnReviewDoesNotCountTowardsHasMore)
     EXPECT_EQ(json["own_review"]["review_id"].asInt64(), own);
     EXPECT_EQ(json["reviews"], Json::Value(Json::arrayValue));
     EXPECT_FALSE(json["has_more"].asBool());
+}
+
+class MyReviewsTest : public ReviewWritesTest
+{
+  protected:
+    HttpResponsePtr myReviews(const std::string &sort = "", const std::string &q = "",
+                              const std::string &page = "", const Cookies &cookies = kAuthor)
+    {
+        const auto req = request(Get, "/api/v1/users/me/reviews", {}, cookies);
+        req->setParameter("sort", sort);
+        req->setParameter("q", q);
+        req->setParameter("page", page);
+        return run(myReviewsHandler(db, req));
+    }
+
+    static std::vector<std::int64_t> movieIds(const HttpResponsePtr &response)
+    {
+        const auto json = body(response);
+        std::vector<std::int64_t> ids;
+        for (const auto &item : json["items"])
+        {
+            ids.push_back(item["movie"]["movie_id"].asInt64());
+        }
+        return ids;
+    }
+
+    Json::Value profileStats()
+    {
+        return body(
+            run(userProfileHandler(db, request(Get, "/api/v1/users/me", {}, kAuthor))))["stats"];
+    }
+};
+
+TEST_F(MyReviewsTest, OnlyOwnReviewsWithMovieAndReviewFields)
+{
+    const auto empty = myReviews();
+    ASSERT_EQ(empty->statusCode(), k200OK);
+    EXPECT_EQ(body(empty)["items"], Json::Value(Json::arrayValue));
+    EXPECT_EQ(body(empty)["total"].asInt64(), 0);
+
+    db->execSqlSync("UPDATE movies SET poster_path = '/interstellar.jpg' WHERE movie_id = 157336");
+    const auto created = post(reviewInput());
+    ASSERT_EQ(created->statusCode(), k201Created);
+    auto foreign = reviewInput();
+    foreign["verdict"] = "neutral";
+    ASSERT_EQ(post(foreign, kOther)->statusCode(), k201Created);
+    db->execSqlSync(
+        "INSERT INTO ratings (user_id, movie_id, score) "
+        "SELECT user_id, 157336, CASE username WHEN 'author' THEN 9 ELSE 8 END FROM users");
+    const auto response = myReviews();
+    ASSERT_EQ(response->statusCode(), k200OK);
+    EXPECT_EQ(response->getHeader("cache-control"), "no-store");
+    const auto json = body(response);
+    EXPECT_EQ(json["total"].asInt64(), 1);
+    ASSERT_EQ(json["items"].size(), 1U);
+    const auto item = json["items"][0];
+    EXPECT_EQ(item["review"], body(created));
+    EXPECT_EQ(item["movie"]["movie_id"].asInt64(), 157336);
+    EXPECT_EQ(item["movie"]["title"].asString(), "Интерстеллар");
+    EXPECT_EQ(item["movie"]["poster_url"].asString(),
+              "https://image.tmdb.org/t/p/w500/interstellar.jpg");
+    EXPECT_DOUBLE_EQ(item["movie"]["average_rating"].asDouble(), 8.5);
+    EXPECT_EQ(item["movie"]["user_rating"].asInt(), 9);
+}
+
+TEST_F(MyReviewsTest, RequiresSessionAndValidParameters)
+{
+    const auto anonymous = myReviews("invalid", "", "0", {});
+    EXPECT_EQ(anonymous->statusCode(), k401Unauthorized);
+    EXPECT_EQ(body(anonymous)["code"].asString(), "SESSION_REQUIRED");
+    const auto expired = myReviews("", "", "", {{"dv_session", "stale"}});
+    EXPECT_EQ(expired->statusCode(), k401Unauthorized);
+    EXPECT_EQ(body(expired)["code"].asString(), "SESSION_EXPIRED");
+    for (const auto &[sort, page, field] :
+         {std::tuple{"invalid", "", "sort"}, std::tuple{"newest", "0", "page"},
+          std::tuple{"newest", "2147483648", "page"}})
+    {
+        const auto response = myReviews(sort, "", page);
+        EXPECT_EQ(response->statusCode(), k400BadRequest);
+        EXPECT_EQ(body(response)["code"].asString(), "INVALID_PARAMETER");
+        EXPECT_EQ(body(response)["field"].asString(), field);
+    }
+}
+
+TEST_F(MyReviewsTest, SortsAndSearchesByMovieTitle)
+{
+    db->execSqlSync(
+        "INSERT INTO movies (movie_id, title, original_title) VALUES "
+        "(11, 'Атлас', 'Atlas'), (12, 'Север', 'North'), (13, 'Север', 'North II')");
+    db->execSqlSync(
+        "INSERT INTO reviews (user_id, movie_id, verdict, body, created_at) "
+        "SELECT user_id, x.movie_id, 'negative', repeat('а', 300), now() - x.age * interval '1 "
+        "minute' "
+        "FROM users CROSS JOIN (VALUES (11, 5), (12, 10), (13, 15)) AS x(movie_id, age) "
+        "WHERE username = 'author'");
+    db->execSqlSync(
+        "INSERT INTO ratings (user_id, movie_id, score) "
+        "SELECT user_id, x.movie_id, x.score FROM users "
+        "CROSS JOIN (VALUES (11, 9), (12, 7)) AS x(movie_id, score) WHERE username = 'other'");
+    using Ids = std::vector<std::int64_t>;
+    EXPECT_EQ(movieIds(myReviews()), (Ids{11, 12, 13}));
+    EXPECT_EQ(movieIds(myReviews("oldest")), (Ids{13, 12, 11}));
+    EXPECT_EQ(movieIds(myReviews("title_asc")), (Ids{11, 12, 13}));
+    EXPECT_EQ(movieIds(myReviews("title_desc")), (Ids{12, 13, 11}));
+    EXPECT_EQ(movieIds(myReviews("best")), (Ids{11, 12, 13}));
+    EXPECT_EQ(movieIds(myReviews("worst")), (Ids{12, 11, 13}));
+    const auto filtered = myReviews("oldest", "  еВЕ  ");
+    EXPECT_EQ(movieIds(filtered), (Ids{13, 12}));
+    EXPECT_EQ(body(filtered)["total"].asInt64(), 2);
+    const auto unknown = myReviews("", "нет совпадений");
+    EXPECT_TRUE(movieIds(unknown).empty());
+    EXPECT_EQ(body(unknown)["total"].asInt64(), 0);
+}
+
+TEST_F(MyReviewsTest, RejectsSearchTextUnsupportedByPostgres)
+{
+    for (const auto &query : {std::string("Атлас\0другой", sizeof("Атлас\0другой") - 1),
+                              std::string(1, static_cast<char>(0xff))})
+    {
+        const auto response = myReviews("", query);
+        EXPECT_EQ(response->statusCode(), k400BadRequest);
+        EXPECT_EQ(body(response)["code"].asString(), "INVALID_PARAMETER");
+        EXPECT_EQ(body(response)["field"].asString(), "q");
+    }
+}
+
+TEST_F(MyReviewsTest, StablePagesOfTwentyFourAndTotalPastLastPage)
+{
+    db->execSqlSync(
+        "INSERT INTO movies (movie_id, title, original_title) "
+        "SELECT g, 'Атлас', 'Atlas' FROM generate_series(101, 125) AS g");
+    db->execSqlSync(
+        "INSERT INTO reviews (user_id, movie_id, verdict, body, created_at) "
+        "SELECT user_id, g, 'neutral', repeat('а', 300), '2024-11-12 12:37:00+00' "
+        "FROM users CROSS JOIN generate_series(101, 125) AS g WHERE username = 'author' ORDER BY "
+        "g");
+    const auto first = myReviews("title_asc", "", "1");
+    const auto firstIds = movieIds(first);
+    ASSERT_EQ(firstIds.size(), 24U);
+    EXPECT_EQ(firstIds.front(), 125);
+    EXPECT_EQ(firstIds.back(), 102);
+    const auto second = myReviews("title_asc", "", "2");
+    EXPECT_EQ(movieIds(second), std::vector<std::int64_t>{101});
+    const auto beyond = myReviews("title_asc", "", "3");
+    EXPECT_TRUE(movieIds(beyond).empty());
+    for (const auto &page : {first, second, beyond})
+    {
+        EXPECT_EQ(page->statusCode(), k200OK);
+        EXPECT_EQ(body(page)["total"].asInt64(), 25);
+    }
+}
+
+TEST_F(MyReviewsTest, ReviewCountFollowsCreationAndDeletion)
+{
+    EXPECT_EQ(profileStats()["reviews_count"].asInt64(), 0);
+    const auto created = post(reviewInput());
+    ASSERT_EQ(created->statusCode(), k201Created);
+    EXPECT_EQ(profileStats()["reviews_count"].asInt64(), 1);
+    const auto removed = remove(body(created)["review_id"].asString());
+    ASSERT_EQ(removed->statusCode(), k204NoContent);
+    EXPECT_EQ(profileStats()["reviews_count"].asInt64(), 0);
+    EXPECT_TRUE(movieIds(myReviews()).empty());
+}
+
+TEST_F(MyReviewsTest, EditedBodyAppearsWithOriginalDateAndTitle)
+{
+    auto initial = reviewInput();
+    initial["title"] = "Заголовок";
+    const auto created = post(initial);
+    ASSERT_EQ(created->statusCode(), k201Created);
+    const auto review = body(created);
+    Json::Value change;
+    change["body"] = unicodeText(301);
+    const auto updated = edit(review["review_id"].asString(), change);
+    ASSERT_EQ(updated->statusCode(), k200OK);
+    const auto listed = body(myReviews())["items"];
+    ASSERT_EQ(listed.size(), 1U);
+    const auto edited = listed[0]["review"];
+    EXPECT_EQ(edited, body(updated));
+    EXPECT_EQ(edited["created_at"], review["created_at"]);
+    EXPECT_EQ(edited["title"], initial["title"]);
+    EXPECT_EQ(edited["body"], change["body"]);
+    EXPECT_TRUE(edited["is_edited"].asBool());
 }

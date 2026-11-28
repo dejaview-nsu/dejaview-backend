@@ -36,6 +36,10 @@ drogon::Task<drogon::HttpResponsePtr> movieReviewsHandler(drogon::orm::DbClientP
                                                           drogon::HttpRequestPtr req,
                                                           std::string movieId);
 
+// GET /users/me/reviews: по 24 отзыва владельца сессии с данными фильмов и общим числом совпадений.
+drogon::Task<drogon::HttpResponsePtr> myReviewsHandler(drogon::orm::DbClientPtr db,
+                                                       drogon::HttpRequestPtr req);
+
 drogon::Task<drogon::HttpResponsePtr> createMovieReviewHandler(drogon::orm::DbClientPtr db,
                                                                drogon::HttpRequestPtr req,
                                                                std::string movieId);

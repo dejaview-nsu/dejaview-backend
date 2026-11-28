@@ -3,6 +3,7 @@
 #include "auth/http_common.hpp"
 #include "auth/session.hpp"
 #include "error_response.hpp"
+#include "lists.hpp"
 #include "movies/card.hpp"
 
 #include <drogon/drogon.h>
@@ -21,6 +22,7 @@ using namespace drogon;
 namespace
 {
 constexpr std::int64_t kMovieReviewsPageSize = 10;
+constexpr std::int64_t kProfileReviewsPageSize = 24;  // #17030 п. 2.4.2
 
 constexpr char kReviewColumns[] =
     "r.review_id, u.username, "
@@ -53,6 +55,26 @@ std::string_view orderBy(ReviewsSort sort)
             return "r.created_at DESC, r.review_id DESC";
         case ReviewsSort::Oldest:
             return "r.created_at, r.review_id";
+    }
+    return "";
+}
+
+std::string_view orderBy(ListSort sort)
+{
+    switch (sort)
+    {
+        case ListSort::Newest:
+            return "r.created_at DESC, r.review_id DESC";
+        case ListSort::Oldest:
+            return "r.created_at, r.review_id";
+        case ListSort::TitleAsc:
+            return "m.title, r.created_at DESC, r.review_id DESC";
+        case ListSort::TitleDesc:
+            return "m.title DESC, r.created_at DESC, r.review_id DESC";
+        case ListSort::Best:
+            return "rating.average_rating DESC NULLS LAST, r.created_at DESC, r.review_id DESC";
+        case ListSort::Worst:
+            return "rating.average_rating NULLS LAST, r.created_at DESC, r.review_id DESC";
     }
     return "";
 }
@@ -259,6 +281,60 @@ Task<HttpResponsePtr> movieReviewsHandler(orm::DbClientPtr db, HttpRequestPtr re
     body["reviews"] = std::move(reviews);
     body["has_more"] = hasMore;
     auto response = HttpResponse::newHttpJsonResponse(body);
+    response->addHeader("cache-control", "no-store");
+    co_return response;
+}
+
+Task<HttpResponsePtr> myReviewsHandler(orm::DbClientPtr db, HttpRequestPtr req)
+{
+    const auto user = co_await requireSession(db, req);
+    if (!user)
+    {
+        co_return user.error();
+    }
+    const auto query = parseListQuery(req->getParameter("sort"), req->getParameter("q"),
+                                      req->getParameter("page"));
+    if (!query)
+    {
+        co_return errorResponse(k400BadRequest, "INVALID_PARAMETER", "Некорректный запрос",
+                                query.error());
+    }
+    if (!validLength(query->q, 0, query->q.size()))
+    {
+        co_return errorResponse(k400BadRequest, "INVALID_PARAMETER", "Некорректный запрос", "q");
+    }
+
+    // total считается до пагинации, реакции — только для отзывов страницы. Как в списках
+    // профиля, числовое значение средней оценки форматирует PostgreSQL.
+    const std::int64_t first = (query->page - 1) * kProfileReviewsPageSize + 1;
+    const auto rows = co_await db->execSqlCoro(
+        std::string(
+            "WITH found AS ("
+            "SELECT r.review_id, m.movie_id, m.title, m.poster_path, rating.average_rating, "
+            "row_number() OVER (ORDER BY ") +
+            std::string(orderBy(query->sort)) +
+            ") AS n FROM reviews r JOIN movies m ON m.movie_id = r.movie_id "
+            "CROSS JOIN LATERAL (SELECT round(avg(score), 1) AS average_rating "
+            "FROM ratings WHERE movie_id = m.movie_id) rating "
+            "WHERE r.user_id = $1 AND strpos(lower(m.title), lower($2::text COLLATE "
+            "\"ru-RU-x-icu\")) > 0), "
+            "page AS (SELECT * FROM found WHERE n BETWEEN $3 AND $4), "
+            "items AS (SELECT p.n, json_build_object("
+            "'movie', json_build_object('movie_id', p.movie_id, 'title', p.title, "
+            "'poster_url', $5 || p.poster_path, 'average_rating', p.average_rating, "
+            "'user_rating', own.score), 'review', review) AS item "
+            "FROM page p JOIN reviews r ON r.review_id = p.review_id "
+            "JOIN users u ON u.user_id = r.user_id "
+            "LEFT JOIN ratings own ON own.user_id = $1 AND own.movie_id = p.movie_id " +
+            kReactionCounts + "CROSS JOIN LATERAL (SELECT " + kReviewColumns +
+            ") review) "
+            "SELECT json_build_object('items', coalesce((SELECT json_agg(item ORDER BY n) "
+            "FROM items), '[]'), 'total', (SELECT count(*) FROM found))::text AS page",
+        user->userId, query->q, first, first + kProfileReviewsPageSize - 1,
+        std::string(kPosterBaseUrl));
+
+    auto response = HttpResponse::newHttpResponse(k200OK, CT_APPLICATION_JSON);
+    response->setBody(rows[0]["page"].as<std::string>());
     response->addHeader("cache-control", "no-store");
     co_return response;
 }

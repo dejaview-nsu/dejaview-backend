@@ -181,6 +181,8 @@ int main()
         .registerHandler("/api/v1/reviews/{review_id}",
                          [db](HttpRequestPtr req, std::string reviewId)
                          { return deleteReviewHandler(db, req, std::move(reviewId)); }, {Delete})
+        .registerHandler("/api/v1/users/me/reviews",
+                         [db](HttpRequestPtr req) { return myReviewsHandler(db, req); }, {Get})
         .registerHandler("/api/v1/users/me/ratings",
                          [db](HttpRequestPtr req) { return listRatingsHandler(db, req); }, {Get})
         .registerHandler("/api/v1/users/me/lists/{list_type}",
