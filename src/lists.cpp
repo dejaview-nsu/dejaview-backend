@@ -10,6 +10,7 @@
 #include <array>
 #include <charconv>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 using namespace drogon;
@@ -52,6 +53,47 @@ std::string_view orderBy(ListSort sort)
 HttpResponsePtr invalidParameter(std::string_view field)
 {
     return errorResponse(k400BadRequest, "INVALID_PARAMETER", "Некорректный запрос", field);
+}
+
+// Без listType источник плиток — собственные оценки пользователя.
+Task<HttpResponsePtr> listPage(orm::DbClientPtr db, HttpRequestPtr req, std::int64_t userId,
+                               std::optional<std::string> listType)
+{
+    const auto query = parseListQuery(req->getParameter("sort"), req->getParameter("q"),
+                                      req->getParameter("page"));
+    if (!query)
+    {
+        co_return invalidParameter(query.error());
+    }
+
+    // n - номер в порядке sort: страница - диапазон номеров, total верен и за последней страницей.
+    // JSON собирает PostgreSQL: средняя оценка уходит как 8.6, а не 8.5999999999999996 из double
+    const std::int64_t first = (query->page - 1) * kPageSize + 1;
+    const auto result = co_await db->execSqlCoro(
+        std::string(
+            "WITH entries AS (SELECT l.movie_id, l.added_at, own.score AS user_rating "
+            "FROM user_movie_lists l "
+            "LEFT JOIN ratings own ON own.user_id = l.user_id AND own.movie_id = l.movie_id "
+            "WHERE l.user_id = $1 AND l.list_type = $2::text "
+            "UNION ALL SELECT movie_id, created_at, score FROM ratings "
+            "WHERE user_id = $1 AND $2::text IS NULL), "
+            "found AS (SELECT m.movie_id, m.title, m.poster_path, x.average_rating, "
+            "l.user_rating, row_number() OVER (ORDER BY ") +
+            std::string(orderBy(query->sort)) +
+            ") AS n FROM entries l JOIN movies m ON m.movie_id = l.movie_id "
+            "CROSS JOIN LATERAL (SELECT round(avg(score), 1) AS average_rating "
+            "FROM ratings WHERE movie_id = l.movie_id) x "
+            "WHERE strpos(lower(m.title), lower($3::text COLLATE \"ru-RU-x-icu\")) > 0) "
+            "SELECT json_build_object('movies', coalesce((SELECT json_agg(json_build_object("
+            "'movie_id', movie_id, 'title', title, 'poster_url', $6 || poster_path, "
+            "'average_rating', average_rating, 'user_rating', user_rating) ORDER BY n) "
+            "FROM found WHERE n BETWEEN $4 AND $5), '[]'), "
+            "'total', (SELECT count(*) FROM found))::text AS page",
+        userId, listType, query->q, first, first + kPageSize - 1, std::string(kPosterBaseUrl));
+
+    auto response = HttpResponse::newHttpResponse(k200OK, CT_APPLICATION_JSON);
+    response->setBody(result[0]["page"].as<std::string>());
+    co_return response;
 }
 }  // namespace
 
@@ -99,37 +141,17 @@ Task<HttpResponsePtr> listMoviesHandler(orm::DbClientPtr db, HttpRequestPtr req,
     {
         co_return invalidParameter("list_type");
     }
-    const auto query = parseListQuery(req->getParameter("sort"), req->getParameter("q"),
-                                      req->getParameter("page"));
-    if (!query)
+    co_return co_await listPage(db, req, user->userId, std::move(listType));
+}
+
+Task<HttpResponsePtr> listRatingsHandler(orm::DbClientPtr db, HttpRequestPtr req)
+{
+    const auto user = co_await requireSession(db, req);
+    if (!user)
     {
-        co_return invalidParameter(query.error());
+        co_return user.error();
     }
-
-    // n - номер в порядке sort: страница - диапазон номеров, total верен и за последней страницей.
-    // JSON собирает PostgreSQL: средняя оценка уходит как 8.6, а не 8.5999999999999996 из double
-    const std::int64_t first = (query->page - 1) * kPageSize + 1;
-    const auto result = co_await db->execSqlCoro(
-        std::string("WITH found AS (SELECT m.movie_id, m.title, m.poster_path, x.average_rating, "
-                    "own.score AS user_rating, row_number() OVER (ORDER BY ") +
-            std::string(orderBy(query->sort)) +
-            ") AS n FROM user_movie_lists l JOIN movies m ON m.movie_id = l.movie_id "
-            "CROSS JOIN LATERAL (SELECT round(avg(score), 1) AS average_rating "
-            "FROM ratings WHERE movie_id = l.movie_id) x "
-            "LEFT JOIN ratings own ON own.user_id = l.user_id AND own.movie_id = l.movie_id "
-            "WHERE l.user_id = $1 AND l.list_type = $2 "
-            "AND strpos(lower(m.title), lower($3::text COLLATE \"ru-RU-x-icu\")) > 0) "
-            "SELECT json_build_object('movies', coalesce((SELECT json_agg(json_build_object("
-            "'movie_id', movie_id, 'title', title, 'poster_url', $6 || poster_path, "
-            "'average_rating', average_rating, 'user_rating', user_rating) ORDER BY n) "
-            "FROM found WHERE n BETWEEN $4 AND $5), '[]'), "
-            "'total', (SELECT count(*) FROM found))::text AS page",
-        user->userId, listType, query->q, first, first + kPageSize - 1,
-        std::string(kPosterBaseUrl));
-
-    auto response = HttpResponse::newHttpResponse(k200OK, CT_APPLICATION_JSON);
-    response->setBody(result[0]["page"].as<std::string>());
-    co_return response;
+    co_return co_await listPage(db, req, user->userId, std::nullopt);
 }
 
 Task<HttpResponsePtr> addToListHandler(orm::DbClientPtr db, HttpRequestPtr req,
@@ -211,14 +233,16 @@ Task<HttpResponsePtr> movieListsStateHandler(orm::DbClientPtr db, HttpRequestPtr
     }
 
     const auto rows = co_await db->execSqlCoro(
-        "SELECT list_type FROM user_movie_lists WHERE user_id = $1 AND movie_id = $2", user->userId,
-        *id);
+        "SELECT count(*) FILTER (WHERE list_type = 'want_to_watch') > 0 AS want_to_watch, "
+        "count(*) FILTER (WHERE list_type = 'watched') > 0 AS watched, "
+        "(SELECT score FROM ratings WHERE user_id = $1 AND movie_id = $2) AS user_rating "
+        "FROM user_movie_lists WHERE user_id = $1 AND movie_id = $2",
+        user->userId, *id);
+    const auto row = rows[0];
+    const auto score = row["user_rating"];
     Json::Value state;
-    state["want_to_watch"] = false;
-    state["watched"] = false;
-    for (const auto &row : rows)
-    {
-        state[row["list_type"].as<std::string>()] = true;
-    }
+    state["want_to_watch"] = row["want_to_watch"].as<bool>();
+    state["watched"] = row["watched"].as<bool>();
+    state["user_rating"] = score.isNull() ? Json::Value() : Json::Value(score.as<int>());
     co_return HttpResponse::newHttpJsonResponse(state);
 }

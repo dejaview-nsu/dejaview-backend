@@ -10,6 +10,7 @@
 #include "lists.hpp"
 #include "movies/card.hpp"
 #include "profile.hpp"
+#include "ratings.hpp"
 #include "reviews.hpp"
 #include "search/search.hpp"
 
@@ -162,9 +163,17 @@ int main()
         .registerHandler("/api/v1/movies/{movie_id}",
                          [db, tmdb](HttpRequestPtr, std::string movieId)
                          { return movieCardHandler(db, tmdb, std::move(movieId)); }, {Get})
+        .registerHandler("/api/v1/movies/{movie_id}/rating",
+                         [db](HttpRequestPtr req, std::string movieId)
+                         { return setRatingHandler(db, req, std::move(movieId)); }, {Put})
+        .registerHandler("/api/v1/movies/{movie_id}/rating",
+                         [db](HttpRequestPtr req, std::string movieId)
+                         { return removeRatingHandler(db, req, std::move(movieId)); }, {Delete})
         .registerHandler("/api/v1/movies/{movie_id}/reviews",
                          [db](HttpRequestPtr req, std::string movieId)
                          { return movieReviewsHandler(db, req, std::move(movieId)); }, {Get})
+        .registerHandler("/api/v1/users/me/ratings",
+                         [db](HttpRequestPtr req) { return listRatingsHandler(db, req); }, {Get})
         .registerHandler("/api/v1/users/me/lists/{list_type}",
                          [db](HttpRequestPtr req, std::string listType)
                          { return listMoviesHandler(db, req, std::move(listType)); }, {Get})

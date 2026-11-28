@@ -1,5 +1,7 @@
 #include "lists.hpp"
 #include "integration/db_test.hpp"
+#include "profile.hpp"
+#include "ratings.hpp"
 
 #include <cstdint>
 #include <map>
@@ -87,6 +89,17 @@ class ListsTest : public DbTest
         return run(listMoviesHandler(db, req, listType));
     }
 
+    HttpResponsePtr ratings(const std::map<std::string, std::string> &params = {},
+                            const Cookies &cookies = kIvan)
+    {
+        auto req = request(Get, "/api/v1/users/me/ratings", {}, cookies);
+        for (const auto &[name, value] : params)
+        {
+            req->setParameter(name, value);
+        }
+        return run(listRatingsHandler(db, req));
+    }
+
     // movie_id фильмов страницы по порядку
     static Ids ids(const HttpResponsePtr &response)
     {
@@ -153,7 +166,9 @@ TEST_F(ListsTest, StateShowsBothListsIndependently)
         const auto response = state(movieId);
         EXPECT_EQ(response->statusCode(), k200OK) << movieId;
         const Json::Value json = body(response);
-        EXPECT_EQ(json.size(), 2U);  // ровно поля UserMovieState
+        EXPECT_EQ(json.size(), 3U);  // ровно поля UserMovieState
+        EXPECT_TRUE(json.isMember("user_rating"));
+        EXPECT_TRUE(json["user_rating"].isNull());
         return std::pair{json["want_to_watch"].asBool(), json["watched"].asBool()};
     };
     EXPECT_EQ(checkboxes("157336"), std::pair(false, false));
@@ -180,7 +195,7 @@ TEST_F(ListsTest, GuestGetsUnauthorized)
     {
         for (const auto &response :
              {put("want_to_watch", "157336", cookies), remove("want_to_watch", "157336", cookies),
-              state("157336", cookies), list("want_to_watch", {}, cookies)})
+              state("157336", cookies), list("want_to_watch", {}, cookies), ratings({}, cookies)})
         {
             EXPECT_EQ(response->statusCode(), k401Unauthorized) << code;
             EXPECT_EQ(body(response)["code"].asString(), code);
@@ -215,6 +230,92 @@ TEST_F(ListsTest, InvalidParameterGivesBadRequest)
     expectField(list("ratings"), "list_type");
     expectField(list("watched", {{"sort", "rating"}}), "sort");
     expectField(list("watched", {{"page", "0"}}), "page");
+    expectField(ratings({{"sort", "rating"}}), "sort");
+    expectField(ratings({{"page", "0"}}), "page");
+}
+
+TEST_F(ListsTest, RatingChangesAreVisibleInProfileAndMovieState)
+{
+    const auto petr = createUser("petr", "petr@example.com");
+    addMovie(603, "Матрица");
+    db->execSqlSync(
+        "INSERT INTO ratings (user_id, movie_id, score) VALUES ($1, 157336, 8), ($1, 603, 10)",
+        petr);
+    inList(ivan, "watched", 157336, 1);
+    inList(ivan, "want_to_watch", 157336, 1);
+
+    const auto profile = [this]
+    {
+        const auto response =
+            run(userProfileHandler(db, request(Get, "/api/v1/users/me", {}, kIvan)));
+        EXPECT_EQ(response->statusCode(), k200OK);
+        return body(response)["stats"];
+    };
+    const std::string path = "/api/v1/movies/157336/rating";
+    Json::Value score;
+    score["score"] = 10;
+    ASSERT_EQ(run(setRatingHandler(db, request(Put, path, score, kIvan), "157336"))->statusCode(),
+              k204NoContent);
+
+    const auto mine = ratings();
+    ASSERT_EQ(mine->statusCode(), k200OK);
+    ASSERT_EQ(ids(mine), (Ids{157336}));
+    EXPECT_EQ(total(mine), 1);
+    const auto tile = body(mine)["movies"][0];
+    EXPECT_EQ(tile["title"].asString(), "Интерстеллар");
+    EXPECT_TRUE(tile["poster_url"].isNull());
+    EXPECT_DOUBLE_EQ(tile["average_rating"].asDouble(), 9.0);
+    EXPECT_EQ(tile["user_rating"].asInt(), 10);
+    EXPECT_EQ(body(state("157336"))["user_rating"].asInt(), 10);
+    EXPECT_EQ(body(list("watched"))["movies"][0], tile);
+    EXPECT_EQ(body(list("want_to_watch"))["movies"][0], tile);
+    EXPECT_EQ(profile()["ratings_count"].asInt64(), 1);
+    EXPECT_DOUBLE_EQ(profile()["average_rating"].asDouble(), 10.0);
+
+    ASSERT_EQ(
+        run(removeRatingHandler(db, request(Delete, path, {}, kIvan), "157336"))->statusCode(),
+        k204NoContent);
+    const auto empty = ratings();
+    EXPECT_EQ(empty->statusCode(), k200OK);
+    EXPECT_EQ(body(empty)["movies"], Json::Value(Json::arrayValue));
+    EXPECT_EQ(total(empty), 0);
+    EXPECT_TRUE(body(state("157336"))["user_rating"].isNull());
+    EXPECT_TRUE(body(list("watched"))["movies"][0]["user_rating"].isNull());
+    EXPECT_DOUBLE_EQ(body(list("watched"))["movies"][0]["average_rating"].asDouble(), 8.0);
+    EXPECT_EQ(profile()["ratings_count"].asInt64(), 0);
+    EXPECT_DOUBLE_EQ(profile()["average_rating"].asDouble(), 0.0);
+}
+
+TEST_F(ListsTest, RatingsPageSearchesSortsAndCountsOnlyOwnFilms)
+{
+    db->execSqlSync(
+        "INSERT INTO movies (movie_id, title, original_title) "
+        "SELECT id, 'Матрица ' || id, 'The Matrix ' || id FROM generate_series(1, 25) id");
+    db->execSqlSync(
+        "INSERT INTO ratings (user_id, movie_id, score, created_at) "
+        "SELECT $1::bigint, movie_id, CASE WHEN movie_id = 1 THEN 10 ELSE 7 END, "
+        "now() + movie_id * interval '1 second' FROM movies WHERE movie_id <= 25",
+        ivan);
+    const auto petr = createUser("petr", "petr@example.com");
+    db->execSqlSync("INSERT INTO ratings (user_id, movie_id, score) VALUES ($1, 157336, 8)", petr);
+
+    const auto first = ratings();
+    ASSERT_EQ(first->statusCode(), k200OK);
+    const auto firstIds = ids(first);
+    ASSERT_EQ(firstIds.size(), 24U);
+    EXPECT_EQ(firstIds.front(), 25);
+    EXPECT_EQ(firstIds.back(), 2);
+    EXPECT_EQ(total(first), 25);
+    EXPECT_EQ(ids(ratings({{"page", "2"}})), (Ids{1}));
+    const auto beyond = ratings({{"page", "3"}});
+    EXPECT_TRUE(ids(beyond).empty());
+    EXPECT_EQ(total(beyond), 25);
+    const auto search = ratings({{"q", "  мАТРИЦА 2  "}, {"sort", "oldest"}});
+    EXPECT_EQ(ids(search), (Ids{2, 20, 21, 22, 23, 24, 25}));
+    EXPECT_EQ(total(search), 7);
+    const auto best = ids(ratings({{"sort", "best"}}));
+    ASSERT_FALSE(best.empty());
+    EXPECT_EQ(best.front(), 1);
 }
 
 // #17030 п. 2.4.2: не более 24 фильмов на странице, total - для «Страница X из Y»
