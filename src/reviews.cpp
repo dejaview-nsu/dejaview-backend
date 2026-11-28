@@ -130,9 +130,11 @@ bool validLength(std::string_view text, std::size_t min, std::size_t max)
     return length >= min;
 }
 
-std::expected<ReviewFields, std::string_view> parseReviewFields(const Json::Value *json,
+std::expected<ReviewFields, std::string_view> parseReviewFields(const HttpRequestPtr &req,
                                                                 ReviewWrite operation)
 {
+    // Drogon ищет application/json и в параметрах Content-Type. Для записи нужен сам тип.
+    const auto *json = req->contentType() == CT_APPLICATION_JSON ? jsonBody(req) : nullptr;
     if (!json)
     {
         return std::unexpected(std::string_view{});
@@ -352,7 +354,7 @@ Task<HttpResponsePtr> createMovieReviewHandler(orm::DbClientPtr db, HttpRequestP
     {
         co_return movieNotFound();
     }
-    const auto fields = parseReviewFields(jsonBody(req), ReviewWrite::Create);
+    const auto fields = parseReviewFields(req, ReviewWrite::Create);
     if (!fields)
     {
         co_return invalidReview(fields.error());
@@ -400,7 +402,7 @@ Task<HttpResponsePtr> updateReviewHandler(orm::DbClientPtr db, HttpRequestPtr re
     {
         co_return reviewNotFound();
     }
-    const auto fields = parseReviewFields(jsonBody(req), ReviewWrite::Edit);
+    const auto fields = parseReviewFields(req, ReviewWrite::Edit);
     if (!fields)
     {
         co_return invalidReview(fields.error());

@@ -697,3 +697,59 @@ TEST_F(MyReviewsTest, EditedBodyAppearsWithOriginalDateAndTitle)
     EXPECT_EQ(edited["body"], change["body"]);
     EXPECT_TRUE(edited["is_edited"].asBool());
 }
+
+TEST_F(ReviewWritesTest, RequiresJsonMediaTypeForWrites)
+{
+    constexpr auto kMoviePath = "/api/v1/movies/157336/reviews";
+    const auto withMediaType = [&](HttpMethod method, const std::string &path,
+                                   const Json::Value &json, const std::string &mediaType)
+    {
+        auto req = request(method, path, Json::Value(), kAuthor);
+        req->setBody(json.toStyledString());
+        req->addHeader("content-type", mediaType);
+        return req;
+    };
+
+    for (const std::string mediaType : {"text/plain", "application/json-seq"})
+    {
+        const auto rejected = run(createMovieReviewHandler(
+            db, withMediaType(Post, kMoviePath, reviewInput(), mediaType), "157336"));
+        EXPECT_EQ(rejected->statusCode(), k400BadRequest);
+        EXPECT_EQ(body(rejected)["code"].asString(), "VALIDATION_ERROR");
+    }
+    EXPECT_EQ(scalar("SELECT count(*) FROM reviews"), "0");
+
+    const auto created = run(createMovieReviewHandler(
+        db, withMediaType(Post, kMoviePath, reviewInput(), "application/json; charset=utf-8"),
+        "157336"));
+    ASSERT_EQ(created->statusCode(), k201Created);
+    const auto id = body(created)["review_id"].asString();
+    Json::Value change;
+    change["title"] = "Новый заголовок";
+    const auto rejectedEdit = run(updateReviewHandler(
+        db, withMediaType(Patch, "/api/v1/reviews/" + id, change, "application/json-seq"), id));
+    EXPECT_EQ(rejectedEdit->statusCode(), k400BadRequest);
+    EXPECT_EQ(body(rejectedEdit)["code"].asString(), "VALIDATION_ERROR");
+    EXPECT_EQ(scalar("SELECT is_edited FROM reviews"), "f");
+    EXPECT_EQ(scalar("SELECT count(*) FROM user_actions"), "1");
+}
+
+TEST_F(MyReviewsTest, PreservesPunctuationInReviewAndMovieSearch)
+{
+    const std::string title = "L'été & «Кадр»";
+    db->execSqlSync("UPDATE movies SET title = $1 WHERE movie_id = 157336", title);
+    auto input = reviewInput();
+    input["title"] = title;
+    input["body"] =
+        std::string{"Текст с \"кавычками\", <угловыми скобками> и &."} + unicodeText(300);
+
+    const auto created = post(input);
+    ASSERT_EQ(created->statusCode(), k201Created);
+    const auto response = myReviews("", "été &");
+    ASSERT_EQ(response->statusCode(), k200OK);
+    const auto items = body(response)["items"];
+    ASSERT_EQ(items.size(), 1U);
+    EXPECT_EQ(items[0]["movie"]["title"].asString(), title);
+    EXPECT_EQ(items[0]["review"]["title"], input["title"]);
+    EXPECT_EQ(items[0]["review"]["body"], input["body"]);
+}
